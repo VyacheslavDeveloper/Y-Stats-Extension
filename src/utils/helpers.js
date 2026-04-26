@@ -1,4 +1,4 @@
-import { PATHS, REVENUE_SERIES_IDS, CHART } from '../config/constants.js'
+import { PATHS, REVENUE_SERIES_IDS, TOTAL_SERIES_IDS, PERIODS } from '../config/constants.js'
 import { formatShortDate, calculateRevenuePerPlayer } from './formatters.js'
 
 // ==================== Page helpers ====================
@@ -84,7 +84,7 @@ export function extractPlayersFromSeries(series, timestamp = null) {
         if (!serie.data?.length) continue
 
         const serieId = serie.id || ''
-        if (serieId !== CHART.PLAYERS_SERIES_ID) continue
+        if (!TOTAL_SERIES_IDS.includes(serieId)) continue
 
         const dataPoint = timestamp
             ? serie.data.find((point) => point.x === timestamp)
@@ -174,7 +174,7 @@ export function prepareGamesTableData(allGamesData, gamesInfo, periodStart, peri
             return createEmptyGameData(gameInfo)
         }
 
-        const revenue = period === 'day'
+        const revenue = period === PERIODS.DAY
             ? extractDayRevenue(series, periodEnd)
             : extractPeriodRevenue(series, periodStart, periodEnd)
 
@@ -184,7 +184,7 @@ export function prepareGamesTableData(allGamesData, gamesInfo, periodStart, peri
         if (allPlayersData && allPlayersData[index]) {
             const playersSeries = allPlayersData[index]?.options?.series
             if (playersSeries) {
-                players = period === 'day'
+                players = period === PERIODS.DAY
                     ? extractPlayersFromSeries(playersSeries, periodEnd)
                     : extractPeriodPlayers(playersSeries, periodStart, periodEnd)
             }
@@ -268,7 +268,7 @@ function extractPeriodPlayers(series, periodStart, periodEnd) {
         if (!serie.data?.length) continue
 
         const serieId = serie.id || ''
-        if (serieId !== CHART.PLAYERS_SERIES_ID) continue
+        if (!TOTAL_SERIES_IDS.includes(serieId)) continue
 
         return sumPointsInPeriod(serie.data, periodStart, periodEnd)
     }

@@ -1,5 +1,5 @@
 import { formatMoney, formatCompactNumber, hexToRgba } from '../utils/formatters.js'
-import { SELECTORS, DATA_ATTRIBUTES, CHART_COLORS } from '../config/constants.js'
+import { SELECTORS, DATA_ATTRIBUTES, CHART_COLORS, PERIODS } from '../config/constants.js'
 
 export class StatsView {
     constructor() {
@@ -83,7 +83,7 @@ export class StatsView {
         content.appendChild(this._createLoadButtonWrapper())
     }
 
-    showResults(data, selectedPeriod = 'day', availableDates = [], selectedDate = null) {
+    showResults(data, selectedPeriod = PERIODS.DAY, availableDates = [], selectedDate = null) {
         this._showDateElement()
         const content = this._getContentAndClear()
         if (!content) return
@@ -115,7 +115,7 @@ export class StatsView {
         ]))
     }
 
-    showGamesTable(gamesData, selectedPeriod = 'day', activeTab = 'games-table', availableDates = [], selectedDate = null) {
+    showGamesTable(gamesData, selectedPeriod = PERIODS.DAY, activeTab = 'games-table', availableDates = [], selectedDate = null) {
         this._showDateElement()
         const content = this._getContentAndClear()
         if (!content) return
@@ -125,7 +125,7 @@ export class StatsView {
         content.appendChild(this._createGamesTable(gamesData))
     }
 
-    showChart(chartData, selectedPeriod = 'month_current') {
+    showChart(chartData, selectedPeriod = PERIODS.MONTH_CURRENT) {
         this._showDateElement()
         const content = this._getContentAndClear()
         if (!content) return
@@ -266,11 +266,11 @@ export class StatsView {
         selector.className = 'stats-period-selector'
 
         const periods = [
-            { key: 'week', label: '7 дней' },
-            { key: 'month', label: '30 дней' },
-            { key: 'month_current', label: 'Этот месяц' },
-            { key: 'month_prev', label: 'Прошлый месяц' },
-            { key: 'all-time', label: 'Все время' },
+            { key: PERIODS.WEEK, label: '7 дней' },
+            { key: PERIODS.MONTH, label: '30 дней' },
+            { key: PERIODS.MONTH_CURRENT, label: 'Этот месяц' },
+            { key: PERIODS.MONTH_PREV, label: 'Прошлый месяц' },
+            { key: PERIODS.ALL_TIME, label: 'Все время' },
         ]
 
         periods.forEach(({ key, label }) => {

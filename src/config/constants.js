@@ -46,16 +46,17 @@ export const API = {
 export const CHART = {
     SLUG: 'purchase_amount',
     PLAYERS_SLUG: 'players',
-    PLAYERS_SERIES_ID: 'Всего',
     LANG: 'ru',
     MOBILE_SLICE: '__total__',
     COUNTRY_SLICE: '__total__',
 }
 
+export const TOTAL_SERIES_IDS = ['Всего', 'Total', 'всего', 'total']
+
 export const REVENUE_SERIES_IDS = {
-    YANDEX_ADS: ['Рекламная сеть Яндекса'],
-    EXTERNAL_ADS: ['Внешние рекламные сети'],
-    IN_APP: ['Инап-покупки', 'In-app purchases'],
+    YANDEX_ADS: ['Рекламная сеть Яндекса', 'Yandex Ads', 'Yandex Advertising Network'],
+    EXTERNAL_ADS: ['Внешние рекламные сети', 'External Ads', 'External Ad Networks'],
+    IN_APP: ['Инап-покупки', 'In-app purchases', 'In-app Purchases'],
 }
 
 export const PATHS = {
@@ -92,7 +93,24 @@ export const DATA_ATTRIBUTES = {
     LABEL: 'data-label',
 }
 
-export const DEFAULT_CHART_PERIOD = 'month'
+export const PERIODS = {
+    DAY: 'day',
+    WEEK: 'week',
+    MONTH: 'month',
+    MONTH_CURRENT: 'month_current',
+    MONTH_PREV: 'month_prev',
+    CUSTOM: 'custom',
+    ALL_TIME: 'all-time',
+}
+
+export const GROUPING = {
+    DAY: 'day',
+    WEEK: 'week',
+    MONTH: 'month',
+}
+
+export const DEFAULT_CHART_PERIOD = PERIODS.MONTH
+export const DEFAULT_GROUPING = GROUPING.DAY
 
 export const CHART_COLORS = {
     total: '#ffffff',

@@ -3,7 +3,7 @@ import { ApiService } from './services/api.service.js'
 import { DomService } from './services/dom.service.js'
 import { VersionService } from './services/version.service.js'
 import { Logger } from './services/logger.service.js'
-import { TIMINGS, API, REVENUE_SERIES_IDS, DATA_ATTRIBUTES, DEFAULT_CHART_PERIOD, CHART } from './config/constants.js'
+import { TIMINGS, API, REVENUE_SERIES_IDS, TOTAL_SERIES_IDS, DATA_ATTRIBUTES, DEFAULT_CHART_PERIOD, PERIODS, CHART } from './config/constants.js'
 import { formatDate } from './utils/formatters.js'
 import { normalizeRequestDelay } from './utils/validators.js'
 import {
@@ -23,13 +23,13 @@ export class App {
         this.view = new StatsView()
         this.domService = new DomService(this.view)
         this.rawData = null
-        this.selectedPeriod = 'month_current'
+        this.selectedPeriod = PERIODS.MONTH_CURRENT
         this.csrfToken = null
         this.isLoading = false
         this.settings = {
             enabled: true,
             requestDelay: API.REQUEST_DELAY,
-            selectedPeriod: 'month_current',
+            selectedPeriod: PERIODS.MONTH_CURRENT,
         }
         this.activeTab = 'overview'
         this.sortBy = 'totalRevenue'
@@ -69,7 +69,7 @@ export class App {
         const defaultSettings = {
             enabled: true,
             requestDelay: API.REQUEST_DELAY,
-            selectedPeriod: 'month_current',
+            selectedPeriod: PERIODS.MONTH_CURRENT,
         }
 
         try {
@@ -247,14 +247,14 @@ export class App {
                 this.rawData.gamesInfo,
                 timestamp,
                 timestamp,
-                'day',
+                PERIODS.DAY,
                 this.rawData.allPlayersData,
             )
 
             const sortedData = sortGamesTableData(tableData, this.sortBy, this.sortOrder)
             this.view.showGamesTable(
                 sortedData,
-                'day',
+                PERIODS.DAY,
                 this.activeTab,
                 this.availableDates,
                 this.selectedDate,
@@ -278,7 +278,7 @@ export class App {
                 players: players,
             }
 
-            this.view.showResults(dateData, 'day', this.availableDates, this.selectedDate)
+            this.view.showResults(dateData, PERIODS.DAY, this.availableDates, this.selectedDate)
             this._setupEventHandlers()
         }
 
@@ -309,12 +309,12 @@ export class App {
         const dayMs = 24 * 60 * 60 * 1000
         const endDate = new Date(lastTimestamp)
 
-        if (period === 'all-time') {
+        if (period === PERIODS.ALL_TIME) {
             const start = findEarliestTimestamp(rawData.allGamesData) || lastTimestamp
             return { start, end: lastTimestamp }
         }
 
-        if (period === 'month_current') {
+        if (period === PERIODS.MONTH_CURRENT) {
             const start = Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth(), 1)
             const calendarEnd = Date.UTC(
                 endDate.getUTCFullYear(),
@@ -329,7 +329,7 @@ export class App {
             return { start, end }
         }
 
-        if (period === 'month_prev') {
+        if (period === PERIODS.MONTH_PREV) {
             const start = Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth() - 1, 1)
             const end = Date.UTC(
                 endDate.getUTCFullYear(),
@@ -344,8 +344,8 @@ export class App {
         }
 
         const daysMap = {
-            week: 7,
-            month: 30,
+            [PERIODS.WEEK]: 7,
+            [PERIODS.MONTH]: 30,
         }
         const days = daysMap[period] || 7
         const start = lastTimestamp - (days - 1) * dayMs
@@ -354,21 +354,21 @@ export class App {
 
     normalizePeriod(period) {
         const map = {
-            month_3: 'month_current',
+            month_3: PERIODS.MONTH_CURRENT,
         }
         const allowed = new Set([
-            'week',
-            'month',
-            'month_current',
-            'month_prev',
-            'all-time',
+            PERIODS.WEEK,
+            PERIODS.MONTH,
+            PERIODS.MONTH_CURRENT,
+            PERIODS.MONTH_PREV,
+            PERIODS.ALL_TIME,
         ])
         const normalized = map[period] || period
-        return allowed.has(normalized) ? normalized : 'month_current'
+        return allowed.has(normalized) ? normalized : PERIODS.MONTH_CURRENT
     }
 
     aggregateDataForPeriod(rawData, period) {
-        if (period === 'day') {
+        if (period === PERIODS.DAY) {
             return rawData.lastDay
         }
 
@@ -425,7 +425,7 @@ export class App {
                     if (!serie.data?.length) return
 
                     const serieId = serie.id || ''
-                    if (serieId !== CHART.PLAYERS_SERIES_ID) return
+                    if (!TOTAL_SERIES_IDS.includes(serieId)) return
 
                     const pointsInPeriod = serie.data
                         .filter(
