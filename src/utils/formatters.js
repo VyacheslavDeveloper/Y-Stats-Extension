@@ -42,7 +42,7 @@ export function hexToRgba(hex, alpha) {
     return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
-export function calculateRevenuePerPlayer(revenue, players) {
+export function calculateRevenuePer1000Players(revenue, players) {
     if (!players || players === 0) return 0
-    return revenue / players
+    return (revenue / players) * 1000
 }

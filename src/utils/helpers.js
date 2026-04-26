@@ -1,5 +1,5 @@
 import { PATHS, REVENUE_SERIES_IDS, TOTAL_SERIES_IDS, PERIODS } from '../config/constants.js'
-import { formatShortDate, calculateRevenuePerPlayer } from './formatters.js'
+import { formatShortDate, calculateRevenuePer1000Players } from './formatters.js'
 
 // ==================== Generic utils ====================
 
@@ -196,7 +196,7 @@ export function prepareGamesTableData(allGamesData, gamesInfo, periodStart, peri
             }
         }
 
-        const revenuePerPlayer = calculateRevenuePerPlayer(totalRevenue, players)
+        const revenuePer1000Players = calculateRevenuePer1000Players(totalRevenue, players)
 
         return {
             id: gameInfo.id,
@@ -204,7 +204,7 @@ export function prepareGamesTableData(allGamesData, gamesInfo, periodStart, peri
             url: gameInfo.url,
             totalRevenue,
             players,
-            revenuePerPlayer,
+            revenuePer1000Players,
             ...revenue,
         }
     })
@@ -220,7 +220,7 @@ function createEmptyGameData(gameInfo) {
         externalAds: 0,
         inApp: 0,
         players: 0,
-        revenuePerPlayer: 0,
+        revenuePer1000Players: 0,
     }
 }
 

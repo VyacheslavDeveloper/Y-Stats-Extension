@@ -395,7 +395,7 @@ export class StatsView {
             { sort: 'externalAds', label: 'Внешние сети' },
             { sort: 'inApp', label: 'In-app' },
             { sort: 'players', label: 'Игроки' },
-            { sort: 'revenuePerPlayer', label: '₽/игрок' },
+            { sort: 'revenuePer1000Players', label: '₽ / 1000 игроков' },
         ]
 
         headers.forEach(({ sort, label }) => {
@@ -427,7 +427,7 @@ export class StatsView {
             { className: 'revenue-cell', label: 'Внешние сети', value: formatMoney(game.externalAds) },
             { className: 'revenue-cell', label: 'In-app', value: formatMoney(game.inApp) },
             { className: 'players-cell', label: 'Игроки', value: (game.players || 0).toLocaleString('ru-RU') },
-            { className: 'revenue-cell', label: '₽/игрок', value: formatMoney(game.revenuePerPlayer || 0) },
+            { className: 'revenue-cell', label: '₽ / 1000 игроков', value: formatMoney(game.revenuePer1000Players || 0) },
         ]
 
         cells.forEach(({ className, label, value }) => {
