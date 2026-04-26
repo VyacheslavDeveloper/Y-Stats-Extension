@@ -1,4 +1,5 @@
 import { API, CHART } from '../config/constants.js'
+import { pickFirstString } from '../utils/helpers.js'
 import { Logger } from './logger.service.js'
 
 const CSRF_TOKEN_PATTERN = /"secretkey"\s*:\s*"([^"]+)"/
@@ -63,17 +64,14 @@ export class ApiService {
 
             const gamesInfo = games
                 .map((game) => {
-                    let name = `Игра ${game.rtx_id}`
-                    if (game['published-version']?.title) {
-                        name = game['published-version'].title.ru || game['published-version'].title.en || name
-                    }
-
-                    const gameUrl = `https://games.yandex.ru/console/application/${game.rtx_id}#metrics`
+                    const defaultName = `Игра ${game?.rtx_id || 'unknown'}`
+                    const localizedTitle = game?.['published-version']?.title || {}
+                    const name = pickFirstString(localizedTitle.ru, localizedTitle.en) || defaultName
 
                     return {
-                        id: game.rtx_id,
-                        name: name,
-                        url: gameUrl,
+                        id: String(game?.rtx_id || ''),
+                        name,
+                        url: `${API.BASE_URL}/console/application/${game?.rtx_id}#metrics`,
                     }
                 })
                 .filter((game) => game.id)

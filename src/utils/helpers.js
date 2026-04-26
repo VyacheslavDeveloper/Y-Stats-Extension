@@ -1,6 +1,12 @@
 import { PATHS, REVENUE_SERIES_IDS, TOTAL_SERIES_IDS, PERIODS } from '../config/constants.js'
 import { formatShortDate, calculateRevenuePerPlayer } from './formatters.js'
 
+// ==================== Generic utils ====================
+
+export function pickFirstString(...values) {
+    return values.find((value) => typeof value === 'string' && value.trim()) || null
+}
+
 // ==================== Page helpers ====================
 
 export function isApplicationsPage(path = window.location.pathname) {
