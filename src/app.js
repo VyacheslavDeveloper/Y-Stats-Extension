@@ -60,9 +60,8 @@ export class App {
             this.handleUrlChange(newUrl)
         })
 
-        this.domService.tryInsert(() => {
-            this.onBlockInserted()
-        })
+        this.domService.setInsertCallback(() => this.onBlockInserted())
+        this.domService.tryInsert()
     }
 
     async loadSettings() {
@@ -119,9 +118,7 @@ export class App {
     handleUrlChange(newUrl) {
         if (isApplicationsPage(newUrl)) {
             if (!this.view.isInDOM()) {
-                this.domService.tryInsert(() => {
-                    this.onBlockInserted()
-                })
+                this.domService.tryInsert()
             }
         } else {
             this.domService.removeBlock()
