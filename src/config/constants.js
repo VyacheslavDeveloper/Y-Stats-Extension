@@ -44,11 +44,22 @@ export const API = {
 }
 
 export const CHART = {
-    SLUG: 'purchase_amount',
-    PLAYERS_SLUG: 'players',
     LANG: 'ru',
     MOBILE_SLICE: '__total__',
     COUNTRY_SLICE: '__total__',
+}
+
+export const METRIC_DEFINITIONS = {
+    revenue: {
+        key: 'revenue',
+        slug: 'purchase_amount',
+        label: 'Доход',
+    },
+    players: {
+        key: 'players',
+        slug: 'players',
+        label: 'Игроки',
+    },
 }
 
 export const TOTAL_SERIES_IDS = ['Всего', 'Total', 'всего', 'total']

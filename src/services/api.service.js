@@ -1,4 +1,4 @@
-import { API, CHART } from '../config/constants.js'
+import { API, CHART, METRIC_DEFINITIONS } from '../config/constants.js'
 import { pickFirstString } from '../utils/helpers.js'
 import { Logger } from './logger.service.js'
 
@@ -87,7 +87,7 @@ export class ApiService {
         }
     }
 
-    static async fetchChartkitData(secretkey, gameId, slug = CHART.SLUG) {
+    static async fetchChartkitData(secretkey, gameId, slug = METRIC_DEFINITIONS.revenue.slug) {
         try {
             const url = `${API.BASE_URL}${API.ENDPOINTS.CHARTKIT}`
             const response = await fetchWithTimeout(url, {

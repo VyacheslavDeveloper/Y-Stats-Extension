@@ -3,7 +3,7 @@ import { ApiService } from './services/api.service.js'
 import { DomService } from './services/dom.service.js'
 import { VersionService } from './services/version.service.js'
 import { Logger } from './services/logger.service.js'
-import { TIMINGS, API, REVENUE_SERIES_IDS, TOTAL_SERIES_IDS, DATA_ATTRIBUTES, DEFAULT_CHART_PERIOD, PERIODS, CHART } from './config/constants.js'
+import { TIMINGS, API, REVENUE_SERIES_IDS, TOTAL_SERIES_IDS, DATA_ATTRIBUTES, DEFAULT_CHART_PERIOD, PERIODS, METRIC_DEFINITIONS } from './config/constants.js'
 import { formatDate } from './utils/formatters.js'
 import { normalizeRequestDelay } from './utils/validators.js'
 import {
@@ -514,8 +514,8 @@ export class App {
 
                 try {
                     const [chartkitData, playersData] = await Promise.all([
-                        ApiService.fetchChartkitData(this.csrfToken, gameId, CHART.SLUG),
-                        ApiService.fetchChartkitData(this.csrfToken, gameId, CHART.PLAYERS_SLUG),
+                        ApiService.fetchChartkitData(this.csrfToken, gameId, METRIC_DEFINITIONS.revenue.slug),
+                        ApiService.fetchChartkitData(this.csrfToken, gameId, METRIC_DEFINITIONS.players.slug),
                     ])
                     allGamesData.push(chartkitData)
                     allPlayersData.push(playersData)
