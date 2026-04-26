@@ -1,5 +1,5 @@
 import { formatMoney, formatCompactNumber, hexToRgba } from '../utils/formatters.js'
-import { SELECTORS, DATA_ATTRIBUTES, CHART_COLORS } from '../config/constants.js'
+import { SELECTORS, DATA_ATTRIBUTES, CHART_COLORS, PERIODS } from '../config/constants.js'
 
 export class StatsView {
     constructor() {
@@ -50,7 +50,7 @@ export class StatsView {
         content.appendChild(loadingDiv)
     }
 
-    showLoadingProgress(current, total) {
+    showLoadingProgress(current, total, details = {}) {
         const content = this._getContentAndClear()
         if (!content) return
 
@@ -61,6 +61,10 @@ export class StatsView {
 
         loadingDiv.appendChild(this._createDiv('stats-loading-text', 'Загружаем данные...'))
         loadingDiv.appendChild(this._createDiv('stats-loading-counter', `${current} из ${total} игр`))
+
+        if (details.gameName) {
+            loadingDiv.appendChild(this._createDiv('stats-loading-details', `Игра: ${details.gameName}`))
+        }
 
         const progressBar = document.createElement('div')
         progressBar.className = 'stats-progress-bar'
@@ -83,7 +87,7 @@ export class StatsView {
         content.appendChild(this._createLoadButtonWrapper())
     }
 
-    showResults(data, selectedPeriod = 'day', availableDates = [], selectedDate = null) {
+    showResults(data, selectedPeriod = PERIODS.DAY, availableDates = [], selectedDate = null) {
         this._showDateElement()
         const content = this._getContentAndClear()
         if (!content) return
@@ -115,7 +119,7 @@ export class StatsView {
         ]))
     }
 
-    showGamesTable(gamesData, selectedPeriod = 'day', activeTab = 'games-table', availableDates = [], selectedDate = null) {
+    showGamesTable(gamesData, selectedPeriod = PERIODS.DAY, activeTab = 'games-table', availableDates = [], selectedDate = null) {
         this._showDateElement()
         const content = this._getContentAndClear()
         if (!content) return
@@ -125,7 +129,7 @@ export class StatsView {
         content.appendChild(this._createGamesTable(gamesData))
     }
 
-    showChart(chartData, selectedPeriod = 'month_current') {
+    showChart(chartData, selectedPeriod = PERIODS.MONTH_CURRENT) {
         this._showDateElement()
         const content = this._getContentAndClear()
         if (!content) return
@@ -266,11 +270,11 @@ export class StatsView {
         selector.className = 'stats-period-selector'
 
         const periods = [
-            { key: 'week', label: '7 дней' },
-            { key: 'month', label: '30 дней' },
-            { key: 'month_current', label: 'Этот месяц' },
-            { key: 'month_prev', label: 'Прошлый месяц' },
-            { key: 'all-time', label: 'Все время' },
+            { key: PERIODS.WEEK, label: '7 дней' },
+            { key: PERIODS.MONTH, label: '30 дней' },
+            { key: PERIODS.MONTH_CURRENT, label: 'Этот месяц' },
+            { key: PERIODS.MONTH_PREV, label: 'Прошлый месяц' },
+            { key: PERIODS.ALL_TIME, label: 'Все время' },
         ]
 
         periods.forEach(({ key, label }) => {
@@ -395,7 +399,7 @@ export class StatsView {
             { sort: 'externalAds', label: 'Внешние сети' },
             { sort: 'inApp', label: 'In-app' },
             { sort: 'players', label: 'Игроки' },
-            { sort: 'revenuePerPlayer', label: '₽/игрок' },
+            { sort: 'revenuePer1000Players', label: '₽ / 1000 игроков' },
         ]
 
         headers.forEach(({ sort, label }) => {
@@ -427,7 +431,7 @@ export class StatsView {
             { className: 'revenue-cell', label: 'Внешние сети', value: formatMoney(game.externalAds) },
             { className: 'revenue-cell', label: 'In-app', value: formatMoney(game.inApp) },
             { className: 'players-cell', label: 'Игроки', value: (game.players || 0).toLocaleString('ru-RU') },
-            { className: 'revenue-cell', label: '₽/игрок', value: formatMoney(game.revenuePerPlayer || 0) },
+            { className: 'revenue-cell', label: '₽ / 1000 игроков', value: formatMoney(game.revenuePer1000Players || 0) },
         ]
 
         cells.forEach(({ className, label, value }) => {

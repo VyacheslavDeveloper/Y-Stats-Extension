@@ -6,7 +6,7 @@ export function formatMoney(amount) {
         currency: CURRENCY.CODE,
         minimumFractionDigits: CURRENCY.FRACTION_DIGITS,
         maximumFractionDigits: CURRENCY.FRACTION_DIGITS,
-    }).format(amount)
+    }).format(amount || 0)
 }
 
 export function formatDate(date) {
@@ -21,12 +21,17 @@ const MILLION = 1_000_000
 const THOUSAND = 1_000
 
 export function formatCompactNumber(value) {
-    if (value >= MILLION) {
-        return (value / MILLION).toFixed(1) + 'M'
-    } else if (value >= THOUSAND) {
-        return (value / THOUSAND).toFixed(1) + 'K'
+    const normalized = Number(value) || 0
+
+    if (normalized >= MILLION) {
+        return (normalized / MILLION).toFixed(1) + 'M'
     }
-    return Math.round(value).toString()
+
+    if (normalized >= THOUSAND) {
+        return (normalized / THOUSAND).toFixed(1) + 'K'
+    }
+
+    return Math.round(normalized).toString()
 }
 
 export function formatShortDate(date) {
@@ -42,7 +47,7 @@ export function hexToRgba(hex, alpha) {
     return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
-export function calculateRevenuePerPlayer(revenue, players) {
+export function calculateRevenuePer1000Players(revenue, players) {
     if (!players || players === 0) return 0
-    return revenue / players
+    return (revenue / players) * 1000
 }

@@ -1,5 +1,11 @@
-import { PATHS, REVENUE_SERIES_IDS, CHART } from '../config/constants.js'
-import { formatShortDate, calculateRevenuePerPlayer } from './formatters.js'
+import { PATHS, REVENUE_SERIES_IDS, TOTAL_SERIES_IDS, PERIODS } from '../config/constants.js'
+import { formatShortDate, calculateRevenuePer1000Players } from './formatters.js'
+
+// ==================== Generic utils ====================
+
+export function pickFirstString(...values) {
+    return values.find((value) => typeof value === 'string' && value.trim()) || null
+}
 
 // ==================== Page helpers ====================
 
@@ -84,7 +90,7 @@ export function extractPlayersFromSeries(series, timestamp = null) {
         if (!serie.data?.length) continue
 
         const serieId = serie.id || ''
-        if (serieId !== CHART.PLAYERS_SERIES_ID) continue
+        if (!TOTAL_SERIES_IDS.includes(serieId)) continue
 
         const dataPoint = timestamp
             ? serie.data.find((point) => point.x === timestamp)
@@ -174,7 +180,7 @@ export function prepareGamesTableData(allGamesData, gamesInfo, periodStart, peri
             return createEmptyGameData(gameInfo)
         }
 
-        const revenue = period === 'day'
+        const revenue = period === PERIODS.DAY
             ? extractDayRevenue(series, periodEnd)
             : extractPeriodRevenue(series, periodStart, periodEnd)
 
@@ -184,13 +190,13 @@ export function prepareGamesTableData(allGamesData, gamesInfo, periodStart, peri
         if (allPlayersData && allPlayersData[index]) {
             const playersSeries = allPlayersData[index]?.options?.series
             if (playersSeries) {
-                players = period === 'day'
+                players = period === PERIODS.DAY
                     ? extractPlayersFromSeries(playersSeries, periodEnd)
                     : extractPeriodPlayers(playersSeries, periodStart, periodEnd)
             }
         }
 
-        const revenuePerPlayer = calculateRevenuePerPlayer(totalRevenue, players)
+        const revenuePer1000Players = calculateRevenuePer1000Players(totalRevenue, players)
 
         return {
             id: gameInfo.id,
@@ -198,7 +204,7 @@ export function prepareGamesTableData(allGamesData, gamesInfo, periodStart, peri
             url: gameInfo.url,
             totalRevenue,
             players,
-            revenuePerPlayer,
+            revenuePer1000Players,
             ...revenue,
         }
     })
@@ -214,7 +220,7 @@ function createEmptyGameData(gameInfo) {
         externalAds: 0,
         inApp: 0,
         players: 0,
-        revenuePerPlayer: 0,
+        revenuePer1000Players: 0,
     }
 }
 
@@ -268,7 +274,7 @@ function extractPeriodPlayers(series, periodStart, periodEnd) {
         if (!serie.data?.length) continue
 
         const serieId = serie.id || ''
-        if (serieId !== CHART.PLAYERS_SERIES_ID) continue
+        if (!TOTAL_SERIES_IDS.includes(serieId)) continue
 
         return sumPointsInPeriod(serie.data, periodStart, periodEnd)
     }
