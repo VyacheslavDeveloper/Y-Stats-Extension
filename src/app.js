@@ -507,22 +507,22 @@ export class App {
             const allPlayersData = []
 
             for (let i = 0; i < gamesInfo.length; i++) {
-                const gameId = gamesInfo[i].id
+                const game = gamesInfo[i]
+
+                this.view.showLoadingProgress(i + 1, gamesInfo.length, { gameName: game.name })
 
                 try {
                     const [chartkitData, playersData] = await Promise.all([
-                        ApiService.fetchChartkitData(this.csrfToken, gameId, METRIC_DEFINITIONS.revenue.slug),
-                        ApiService.fetchChartkitData(this.csrfToken, gameId, METRIC_DEFINITIONS.players.slug),
+                        ApiService.fetchChartkitData(this.csrfToken, game.id, METRIC_DEFINITIONS.revenue.slug),
+                        ApiService.fetchChartkitData(this.csrfToken, game.id, METRIC_DEFINITIONS.players.slug),
                     ])
                     allGamesData.push(chartkitData)
                     allPlayersData.push(playersData)
                 } catch (error) {
-                    Logger.error(`Failed to load data for game ${gameId}:`, error)
+                    Logger.error(`Failed to load data for game ${game.id}:`, error)
                     allGamesData.push({})
                     allPlayersData.push({})
                 }
-
-                this.view.showLoadingProgress(i + 1, gamesInfo.length)
 
                 if (i < gamesInfo.length - 1) {
                     await new Promise((resolve) => setTimeout(resolve, this.settings.requestDelay))

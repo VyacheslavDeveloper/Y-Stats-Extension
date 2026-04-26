@@ -50,7 +50,7 @@ export class StatsView {
         content.appendChild(loadingDiv)
     }
 
-    showLoadingProgress(current, total) {
+    showLoadingProgress(current, total, details = {}) {
         const content = this._getContentAndClear()
         if (!content) return
 
@@ -61,6 +61,10 @@ export class StatsView {
 
         loadingDiv.appendChild(this._createDiv('stats-loading-text', 'Загружаем данные...'))
         loadingDiv.appendChild(this._createDiv('stats-loading-counter', `${current} из ${total} игр`))
+
+        if (details.gameName) {
+            loadingDiv.appendChild(this._createDiv('stats-loading-details', `Игра: ${details.gameName}`))
+        }
 
         const progressBar = document.createElement('div')
         progressBar.className = 'stats-progress-bar'
