@@ -6,7 +6,6 @@ export const SELECTORS = {
 }
 
 export const TIMINGS = {
-    INIT_DELAY: 100,
     INIT_RETRY_INTERVAL: 500,
     MAX_INIT_ATTEMPTS: 10,
     OBSERVER_START_DELAY: 2000,
@@ -23,7 +22,8 @@ export const API = {
     BASE_URL: 'https://games.yandex.ru',
     ENDPOINTS: {
         APPLICATIONS: '/console/api/applications',
-        CHARTKIT: '/console/api/chartkit',
+        ANALYTICS: '/console/api/metrics-engine/analytics/data',
+        REVENUE_TOTALS: '/console/api/metrics-engine/total/data',
         CONSOLE: '/console/applications',
     },
     PARAMS: {
@@ -53,8 +53,7 @@ export const CHART = {
 }
 
 export const REVENUE_SERIES_IDS = {
-    YANDEX_ADS: ['Рекламная сеть Яндекса'],
-    EXTERNAL_ADS: ['Внешние рекламные сети'],
+    ADVERTISING: ['Реклама'],
     IN_APP: ['Инап-покупки', 'In-app purchases'],
 }
 
@@ -94,7 +93,6 @@ export const DATA_ATTRIBUTES = {
 
 export const CHART_COLORS = {
     total: '#ffffff',
-    yandexAds: '#22C55E',
-    externalAds: '#3B82F6',
+    advertising: '#22C55E',
     inApp: '#F97316',
 }

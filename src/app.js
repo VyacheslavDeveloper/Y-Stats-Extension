@@ -3,7 +3,7 @@ import { ApiService } from './services/api.service.js'
 import { DomService } from './services/dom.service.js'
 import { VersionService } from './services/version.service.js'
 import { Logger } from './services/logger.service.js'
-import { TIMINGS, API, REVENUE_SERIES_IDS, DATA_ATTRIBUTES, CHART } from './config/constants.js'
+import { TIMINGS, API, DATA_ATTRIBUTES, CHART } from './config/constants.js'
 import { formatDate } from './utils/formatters.js'
 import { normalizeRequestDelay } from './utils/validators.js'
 import {
@@ -134,9 +134,7 @@ export class App {
             this.renderVersionInfo()
         }
 
-        setTimeout(() => {
-            this.setupLoadButton()
-        }, TIMINGS.INIT_DELAY)
+        this.setupLoadButton()
 
         setTimeout(() => {
             this.domService.startObserver()
@@ -270,8 +268,7 @@ export class App {
             const dateData = {
                 date: new Date(timestamp),
                 amount: aggregated.total,
-                yandexAds: aggregated.yandexAds,
-                externalAds: aggregated.externalAds,
+                advertising: aggregated.advertising,
                 inApp: aggregated.inApp,
                 gamesCount: this.rawData.gamesInfo.length,
                 players: players,
@@ -285,10 +282,11 @@ export class App {
         if (dateElement) {
             dateElement.textContent = formatDate(new Date(timestamp))
         }
+        this.updateNotice({ start: timestamp, end: timestamp })
     }
 
     updateDateDisplay(period) {
-        if (!this.rawData || !this.rawData.lastTimestamp) return
+        if (!this.rawData) return
 
         const dateElement = this.view.element.querySelector(`[data-stats="${DATA_ATTRIBUTES.DATE}"]`)
         if (!dateElement) return
@@ -299,17 +297,30 @@ export class App {
         const startDate = new Date(range.start)
         const endDate = new Date(range.end)
         dateElement.textContent = `${formatDate(startDate)} — ${formatDate(endDate)}`
+        this.updateNotice(range, period)
+    }
+
+    updateNotice(range, period = 'day') {
+        const messages = []
+        const errors = this.rawData.errors || []
+        if (errors.length) messages.push(`Данные неполные. Не загружено метрик: ${errors.length}. Итог учитывает только загруженные доходы.`, ...errors)
+        if (this.rawData.periodErrors?.[period]) messages.push(`Не удалось получить итог периода: ${this.rawData.periodErrors[period]}. Показана сумма дневных значений графика; возможна разница округления.`)
+        const lastTimestamp = this.rawData.lastTimestamp
+        if (lastTimestamp) messages.push(`Последний день с данными графиков: ${formatDate(new Date(lastTimestamp))}`)
+        if (!lastTimestamp || range.start > lastTimestamp) messages.push('Данные графиков за выбранный период ещё не доступны. Отсутствующие значения показаны прочерком.')
+        else if (range.end >= lastTimestamp + 86400000) messages.push('Выбранный период включает дни, за которые графики пока не содержат данных.')
+        this.view.setNotice(messages.join('\n'))
     }
 
     getPeriodRange(rawData, period) {
-        if (!rawData?.lastTimestamp) return null
+        if (!rawData) return null
 
-        const { lastTimestamp = Date.now() } = rawData
+        const lastTimestamp = rawData.lastTimestamp || rawData.loadedAt || Date.now()
         const dayMs = 24 * 60 * 60 * 1000
-        const endDate = new Date(lastTimestamp)
+        const endDate = new Date(rawData.loadedAt || Date.now())
 
         if (period === 'all-time') {
-            const start = findEarliestTimestamp(rawData.allGamesData) || lastTimestamp
+            const start = rawData.dateRange ? Date.parse(rawData.dateRange[0]) : findEarliestTimestamp(rawData.allGamesData) || lastTimestamp
             return { start, end: lastTimestamp }
         }
 
@@ -324,7 +335,7 @@ export class App {
                 59,
                 999,
             )
-            const end = Math.min(calendarEnd, lastTimestamp)
+            const end = Math.min(calendarEnd, rawData.loadedAt || Date.now())
             return { start, end }
         }
 
@@ -376,82 +387,18 @@ export class App {
 
         const { start: periodStart, end: periodEnd } = range
 
-        let yandexAdsTotal = 0
-        let externalAdsTotal = 0
-        let inAppTotal = 0
-        let playersTotal = 0
-
-        const { allGamesData, allPlayersData, gamesInfo } = rawData
-
-        allGamesData.forEach((gameData) => {
-            const series = gameData.options?.series
-            if (!series) return
-
-            series.forEach((serie) => {
-                if (!serie.data?.length) return
-
-                const serieId = serie.id || ''
-
-                const pointsInPeriod = serie.data
-                    .filter(
-                        (point) =>
-                            point.x >= periodStart &&
-                            point.x <= periodEnd &&
-                            typeof point.y === 'number',
-                    )
-                    .sort((a, b) => a.x - b.x)
-
-                if (pointsInPeriod.length === 0) return
-
-                const value = pointsInPeriod.reduce((sum, point) => sum + (point.y || 0), 0)
-
-                if (REVENUE_SERIES_IDS.YANDEX_ADS.includes(serieId)) {
-                    yandexAdsTotal += value
-                } else if (REVENUE_SERIES_IDS.EXTERNAL_ADS.includes(serieId)) {
-                    externalAdsTotal += value
-                } else if (REVENUE_SERIES_IDS.IN_APP.includes(serieId)) {
-                    inAppTotal += value
-                }
-            })
-        })
-
-        if (allPlayersData) {
-            allPlayersData.forEach((playerData) => {
-                const series = playerData?.options?.series
-                if (!series) return
-
-                series.forEach((serie) => {
-                    if (!serie.data?.length) return
-
-                    const serieId = serie.id || ''
-                    if (serieId !== CHART.PLAYERS_SERIES_ID) return
-
-                    const pointsInPeriod = serie.data
-                        .filter(
-                            (point) =>
-                                point.x >= periodStart &&
-                                point.x <= periodEnd &&
-                                typeof point.y === 'number',
-                        )
-
-                    if (pointsInPeriod.length === 0) return
-
-                    const value = pointsInPeriod.reduce((sum, point) => sum + (point.y || 0), 0)
-                    playersTotal += value
-                })
-            })
-        }
-
-        const totalAmount = yandexAdsTotal + externalAdsTotal + inAppTotal
-
+        const rows = prepareGamesTableData(
+            rawData.allGamesData, rawData.gamesInfo, periodStart, periodEnd, period, rawData.allPlayersData,
+            rawData.periodRevenues?.[period],
+        )
+        const sum = key => rows.every(row => row[key] === null) ? null : rows.reduce((total, row) => total + (row[key] || 0), 0)
         return {
             date: new Date(periodEnd),
-            amount: totalAmount,
-            yandexAds: yandexAdsTotal,
-            externalAds: externalAdsTotal,
-            inApp: inAppTotal,
-            gamesCount: gamesInfo.length,
-            players: playersTotal,
+            amount: sum('totalRevenue'),
+            advertising: sum('advertising'),
+            inApp: sum('inApp'),
+            gamesCount: rawData.gamesInfo.length,
+            players: rows.some(row => row.players === null) ? null : sum('players'),
         }
     }
 
@@ -480,6 +427,7 @@ export class App {
         }
 
         try {
+            this.view.setNotice('')
             this.view.showInitialLoading()
 
             if (!this.csrfToken) {
@@ -488,10 +436,7 @@ export class App {
                 if (token) {
                     this.csrfToken = token
                 } else {
-                    alert(
-                        'Не удалось получить токен авторизации. Попробуйте перезагрузить страницу.',
-                    )
-                    return
+                    throw new Error('Не удалось получить токен авторизации. Попробуйте перезагрузить страницу.')
                 }
             }
 
@@ -500,28 +445,31 @@ export class App {
             const gamesInfo = await ApiService.fetchGamesList()
 
             if (!gamesInfo || gamesInfo.length === 0) {
-                alert('Нет опубликованных игр')
                 this.view.showButton()
+                this.view.setNotice('Нет опубликованных игр в выбранном аккаунте.')
+                this.setupLoadButton()
                 return
             }
 
             const allGamesData = []
             const allPlayersData = []
+            const errors = []
+            const dateRange = ApiService.getAnalyticsDateRange(today)
 
             for (let i = 0; i < gamesInfo.length; i++) {
                 const gameId = gamesInfo[i].id
 
-                try {
-                    const [chartkitData, playersData] = await Promise.all([
-                        ApiService.fetchChartkitData(this.csrfToken, gameId, CHART.SLUG),
-                        ApiService.fetchChartkitData(this.csrfToken, gameId, CHART.PLAYERS_SLUG),
-                    ])
-                    allGamesData.push(chartkitData)
-                    allPlayersData.push(playersData)
-                } catch (error) {
-                    Logger.error(`Failed to load data for game ${gameId}:`, error)
-                    allGamesData.push({})
-                    allPlayersData.push({})
+                const results = await Promise.allSettled([
+                    ApiService.fetchAnalyticsData(this.csrfToken, gameId, CHART.SLUG, dateRange),
+                    ApiService.fetchAnalyticsData(this.csrfToken, gameId, CHART.PLAYERS_SLUG, dateRange),
+                ])
+                for (const [index, result] of results.entries()) {
+                    const target = index === 0 ? allGamesData : allPlayersData
+                    target.push(result.status === 'fulfilled' ? result.value : null)
+                    if (result.status === 'rejected') {
+                        errors.push(`${gamesInfo[i].name}: ${index === 0 ? 'доход' : 'игроки'} — ${result.reason.message}`)
+                        Logger.error(`Failed to load ${index === 0 ? 'revenue' : 'players'} for game ${gameId}:`, result.reason)
+                    }
                 }
 
                 this.view.showLoadingProgress(i + 1, gamesInfo.length)
@@ -541,8 +489,7 @@ export class App {
             const lastDayData = {
                 date: lastDate,
                 amount: aggregated.total,
-                yandexAds: aggregated.yandexAds,
-                externalAds: aggregated.externalAds,
+                advertising: aggregated.advertising,
                 inApp: aggregated.inApp,
                 gamesCount: gamesInfo.length,
                 players: totalPlayers,
@@ -554,7 +501,23 @@ export class App {
                 gamesInfo: gamesInfo,
                 lastDay: lastDayData,
                 lastTimestamp: lastTimestamp,
+                dateRange,
+                loadedAt: today.getTime(),
+                errors,
+                periodRevenues: {},
+                periodErrors: {},
             }
+
+            // Period totals in the console retain precision that rounded daily chart values lose.
+            const periods = ['week', 'month', 'month_current', 'month_prev', 'all-time']
+            const totals = await Promise.allSettled(periods.map(period => {
+                const range = this.getPeriodRange(this.rawData, period)
+                return ApiService.fetchRevenueTotals([range.start, range.end].map(value => new Date(value).toISOString().slice(0, 10)))
+            }))
+            totals.forEach((result, index) => {
+                if (result.status === 'fulfilled') this.rawData.periodRevenues[periods[index]] = result.value
+                else this.rawData.periodErrors[periods[index]] = result.reason.message
+            })
 
             const timestamps = extractUniqueTimestamps(allGamesData)
             this.availableDates = timestamps.map((timestamp) => ({
@@ -567,9 +530,12 @@ export class App {
             } else {
                 this.updateDataForPeriod(this.selectedPeriod)
             }
+
         } catch (error) {
             Logger.error('Data load failed:', error)
             this.view.showButton()
+            this.view.setNotice(`Не удалось загрузить статистику: ${error.message}`)
+            this.setupLoadButton()
         } finally {
             this.isLoading = false
             
@@ -644,6 +610,7 @@ export class App {
             periodEnd,
             period,
             this.rawData.allPlayersData,
+            this.rawData.periodRevenues?.[period],
         )
 
         const sortedData = sortGamesTableData(tableData, this.sortBy, this.sortOrder)

@@ -1,6 +1,7 @@
 import { CURRENCY } from '../config/constants.js'
 
 export function formatMoney(amount) {
+    if (amount === null || amount === undefined) return '—'
     return new Intl.NumberFormat(CURRENCY.LOCALE, {
         style: 'currency',
         currency: CURRENCY.CODE,

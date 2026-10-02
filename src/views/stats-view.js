@@ -96,13 +96,12 @@ export class StatsView {
         ]))
 
         content.appendChild(this._createStatsRow('stats-row--sources', [
-            { label: 'РСЯ', value: formatMoney(data.yandexAds || 0), size: 'medium' },
-            { label: 'Внешние сети', value: formatMoney(data.externalAds || 0), size: 'medium' },
-            { label: 'In-app', value: formatMoney(data.inApp || 0), size: 'medium' },
+            { label: 'Реклама', value: formatMoney(data.advertising), size: 'medium' },
+            { label: 'In-app', value: formatMoney(data.inApp), size: 'medium' },
         ]))
 
         content.appendChild(this._createStatsRow('stats-row--players', [
-            { label: 'Игроков', value: (data.players || 0).toLocaleString('ru-RU'), size: 'medium' },
+            { label: selectedPeriod === 'day' ? 'Игроков' : 'Игроко-дней', value: data.players === null ? '—' : (data.players || 0).toLocaleString('ru-RU'), size: 'medium' },
         ]))
 
         content.appendChild(this._createStatsRow('stats-row--footer', [
@@ -122,7 +121,7 @@ export class StatsView {
 
         content.appendChild(this._createTabSwitcher(activeTab))
         content.appendChild(this._createSelectorsWrapper(availableDates, selectedDate, selectedPeriod))
-        content.appendChild(this._createGamesTable(gamesData))
+        content.appendChild(this._createGamesTable(gamesData, selectedPeriod))
     }
 
     showChart(chartData, selectedPeriod = 'month_current') {
@@ -133,6 +132,13 @@ export class StatsView {
         content.appendChild(this._createTabSwitcher('chart'))
         content.appendChild(this._createPeriodSelector(selectedPeriod))
         content.appendChild(this._createChart(chartData))
+    }
+
+    setNotice(message) {
+        const notice = this.element?.querySelector('[data-stats="notice"]')
+        if (!notice) return
+        notice.textContent = message
+        notice.hidden = !message
     }
 
     showVersionInfo(info) {
@@ -256,6 +262,11 @@ export class StatsView {
 
         container.appendChild(header)
         container.appendChild(version)
+        const notice = this._createDiv('stats-notice')
+        notice.setAttribute('data-stats', 'notice')
+        notice.setAttribute('role', 'status')
+        notice.hidden = true
+        container.appendChild(notice)
         container.appendChild(content)
 
         return container
@@ -270,7 +281,7 @@ export class StatsView {
             { key: 'month', label: '30 дней' },
             { key: 'month_current', label: 'Этот месяц' },
             { key: 'month_prev', label: 'Прошлый месяц' },
-            { key: 'all-time', label: 'Все время' },
+            { key: 'all-time', label: 'Доступный период' },
         ]
 
         periods.forEach(({ key, label }) => {
@@ -364,18 +375,18 @@ export class StatsView {
 
     // ==================== Table ====================
 
-    _createGamesTable(gamesData) {
+    _createGamesTable(gamesData, period) {
         const tableWrapper = document.createElement('div')
         tableWrapper.className = 'stats-table-wrapper'
 
         const table = document.createElement('table')
         table.className = 'stats-table'
 
-        table.appendChild(this._createTableHeader())
+        table.appendChild(this._createTableHeader(period))
 
         const tbody = document.createElement('tbody')
         gamesData.forEach((game) => {
-            tbody.appendChild(this._createTableRow(game))
+            tbody.appendChild(this._createTableRow(game, period))
         })
         table.appendChild(tbody)
 
@@ -383,7 +394,7 @@ export class StatsView {
         return tableWrapper
     }
 
-    _createTableHeader() {
+    _createTableHeader(period) {
         const thead = document.createElement('thead')
         const tr = document.createElement('tr')
 
@@ -391,11 +402,10 @@ export class StatsView {
             { sort: 'name', label: 'Название игры' },
             { sort: 'id', label: 'ID игры' },
             { sort: 'totalRevenue', label: 'Общий доход' },
-            { sort: 'yandexAds', label: 'РСЯ' },
-            { sort: 'externalAds', label: 'Внешние сети' },
+            { sort: 'advertising', label: 'Реклама' },
             { sort: 'inApp', label: 'In-app' },
-            { sort: 'players', label: 'Игроки' },
-            { sort: 'revenuePerPlayer', label: '₽/игрок' },
+            { sort: 'players', label: period === 'day' ? 'Игроки' : 'Игроко-дни' },
+            { sort: 'revenuePerPlayer', label: period === 'day' ? '₽/игрок' : '₽/игроко-день' },
         ]
 
         headers.forEach(({ sort, label }) => {
@@ -416,18 +426,17 @@ export class StatsView {
         return thead
     }
 
-    _createTableRow(game) {
+    _createTableRow(game, period) {
         const row = document.createElement('tr')
 
         const cells = [
             { className: 'game-name', label: 'Название', value: game.name || 'Неизвестная игра' },
             { className: 'game-id', label: 'ID игры', value: game.id || '-' },
             { className: 'revenue-cell', label: 'Общий доход', value: formatMoney(game.totalRevenue) },
-            { className: 'revenue-cell', label: 'РСЯ', value: formatMoney(game.yandexAds) },
-            { className: 'revenue-cell', label: 'Внешние сети', value: formatMoney(game.externalAds) },
+            { className: 'revenue-cell', label: 'Реклама', value: formatMoney(game.advertising) },
             { className: 'revenue-cell', label: 'In-app', value: formatMoney(game.inApp) },
-            { className: 'players-cell', label: 'Игроки', value: (game.players || 0).toLocaleString('ru-RU') },
-            { className: 'revenue-cell', label: '₽/игрок', value: formatMoney(game.revenuePerPlayer || 0) },
+            { className: 'players-cell', label: period === 'day' ? 'Игроки' : 'Игроко-дни', value: game.players === null ? '—' : (game.players || 0).toLocaleString('ru-RU') },
+            { className: 'revenue-cell', label: period === 'day' ? '₽/игрок' : '₽/игроко-день', value: formatMoney(game.revenuePerPlayer) },
         ]
 
         cells.forEach(({ className, label, value }) => {
@@ -487,8 +496,7 @@ export class StatsView {
                     labels,
                     datasets: [
                         this._createDatasetConfig('Всего', points.map(p => p.total), CHART_COLORS.total, gradients.total, { borderWidth: 3, hidden: false }),
-                        this._createDatasetConfig('РСЯ', points.map(p => p.yandexAds), CHART_COLORS.yandexAds, gradients.yandex, { hidden: true }),
-                        this._createDatasetConfig('Внешние сети', points.map(p => p.externalAds), CHART_COLORS.externalAds, gradients.external, { hidden: true }),
+                        this._createDatasetConfig('Реклама', points.map(p => p.advertising), CHART_COLORS.advertising, gradients.advertising, { hidden: true }),
                         this._createDatasetConfig('In-app', points.map(p => p.inApp), CHART_COLORS.inApp, gradients.inApp, { hidden: true }),
                     ],
                 },
@@ -510,8 +518,7 @@ export class StatsView {
 
         return {
             total: createGradient(CHART_COLORS.total, 0.25, 0.08),
-            yandex: createGradient(CHART_COLORS.yandexAds),
-            external: createGradient(CHART_COLORS.externalAds),
+            advertising: createGradient(CHART_COLORS.advertising),
             inApp: createGradient(CHART_COLORS.inApp),
         }
     }

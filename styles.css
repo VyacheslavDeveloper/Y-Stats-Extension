@@ -834,3 +834,11 @@
         height: 260px;
     }
 }
+
+.stats-notice {
+    margin: 12px 0;
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre-line;
+    opacity: 0.85;
+}
