@@ -3,7 +3,7 @@ import { ApiService } from './services/api.service.js'
 import { DomService } from './services/dom.service.js'
 import { VersionService } from './services/version.service.js'
 import { Logger } from './services/logger.service.js'
-import { TIMINGS, API, REVENUE_SERIES_IDS, DATA_ATTRIBUTES, DEFAULT_CHART_PERIOD, CHART } from './config/constants.js'
+import { TIMINGS, API, REVENUE_SERIES_IDS, DATA_ATTRIBUTES, CHART } from './config/constants.js'
 import { formatDate } from './utils/formatters.js'
 import { normalizeRequestDelay } from './utils/validators.js'
 import {
@@ -262,8 +262,7 @@ export class App {
 
             this._setupEventHandlers({ withTableSorting: true })
         } else if (this.activeTab === 'chart') {
-            // Для графика игнорируем выбор конкретной даты, показываем по периоду
-            this.updateChartForPeriod(DEFAULT_CHART_PERIOD)
+            this.updateChartForPeriod('day', { start: timestamp, end: timestamp })
         } else {
             const aggregated = aggregateRevenueData(this.rawData.allGamesData, timestamp)
             const players = aggregatePlayersData(this.rawData.allPlayersData, timestamp)
@@ -563,26 +562,10 @@ export class App {
                 label: formatDate(new Date(timestamp)),
             }))
 
-            if (this.availableDates.length > 0) {
-                this.selectedDate = this.availableDates[0].timestamp
-                this.dateSelectionMode = 'specific-date'
-            }
-
             if (this.dateSelectionMode === 'specific-date' && this.selectedDate) {
                 this.updateDataForSpecificDate(this.selectedDate)
-            } else if (this.activeTab === 'games-table') {
-                this.updateGamesTableForPeriod(this.selectedPeriod)
-            } else if (this.activeTab === 'chart') {
-                this.updateChartForPeriod(DEFAULT_CHART_PERIOD)
             } else {
-                this.view.showResults(
-                    lastDayData,
-                    this.selectedPeriod,
-                    this.availableDates,
-                    this.selectedDate,
-                )
-                this.updateDateDisplay(this.selectedPeriod)
-                this._setupEventHandlers({ withTableSorting: true })
+                this.updateDataForPeriod(this.selectedPeriod)
             }
         } catch (error) {
             Logger.error('Data load failed:', error)
@@ -627,9 +610,7 @@ export class App {
             if (tabKey === 'games-table') {
                 this.updateGamesTableForPeriod(this.selectedPeriod)
             } else if (tabKey === 'chart') {
-                // Для графика не вызываем setupDateSelector(), т.к. выбор конкретной даты
-                // не применим к графику — он всегда показывает период
-                this.updateChartForPeriod(DEFAULT_CHART_PERIOD)
+                this.updateChartForPeriod(this.selectedPeriod)
             } else {
                 const aggregatedData = this.aggregateDataForPeriod(
                     this.rawData,
@@ -678,10 +659,9 @@ export class App {
         this._setupEventHandlers({ withTableSorting: true })
     }
 
-    updateChartForPeriod(period) {
+    updateChartForPeriod(period, range = this.getPeriodRange(this.rawData, period)) {
         if (!this.rawData) return
 
-        const range = this.getPeriodRange(this.rawData, period)
         if (!range) return
 
         const { start: periodStart, end: periodEnd } = range

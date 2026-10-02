@@ -14,6 +14,7 @@ export function formatDate(date) {
         day: 'numeric',
         month: 'long',
         year: 'numeric',
+        timeZone: 'UTC',
     })
 }
 

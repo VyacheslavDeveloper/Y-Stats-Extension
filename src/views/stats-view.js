@@ -527,7 +527,7 @@ export class StatsView {
             borderWidth: options.borderWidth || 2,
             fill: true,
             tension: 0.4,
-            pointRadius: 0,
+            pointRadius: data.length === 1 ? 4 : 0,
             pointHoverRadius: options.borderWidth === 3 ? 6 : 5,
             pointHoverBackgroundColor: color,
             pointHoverBorderColor: hoverColor,
@@ -597,7 +597,7 @@ export class StatsView {
                 const datasets = chart.data.datasets
 
                 if (clickedIndex === 0) {
-                    // Клик на "Всего" — показать только "Всего", скрыть остальные
+                    // Clicking "Total" shows only the total and hides the other datasets.
                     datasets.forEach((_, i) => {
                         chart.getDatasetMeta(i).hidden = (i !== 0)
                     })

@@ -92,8 +92,6 @@ export const DATA_ATTRIBUTES = {
     LABEL: 'data-label',
 }
 
-export const DEFAULT_CHART_PERIOD = 'month'
-
 export const CHART_COLORS = {
     total: '#ffffff',
     yandexAds: '#22C55E',
