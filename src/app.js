@@ -2,6 +2,7 @@ import { StatsView } from './views/stats-view.js'
 import { ApiService } from './services/api.service.js'
 import { DomService } from './services/dom.service.js'
 import { VersionService } from './services/version.service.js'
+import { StatsCache } from './services/stats-cache.service.js'
 import { Logger } from './services/logger.service.js'
 import { API, DATA_ATTRIBUTES, CHART } from './config/constants.js'
 import { formatDate } from './utils/formatters.js'
@@ -22,6 +23,7 @@ export class App {
     constructor() {
         this.view = new StatsView()
         this.domService = new DomService(this.view)
+        this.cache = new StatsCache()
         this.rawData = null
         this.selectedPeriod = 'month_current'
         this.csrfToken = null
@@ -113,7 +115,7 @@ export class App {
     handleUrlChange(newUrl) {
         if (isApplicationsPage(newUrl)) {
             const context = ApiService.getRelationContext()
-            if (this.widgetContext && this.widgetContext !== context) this.domService.removeBlock()
+            if (this.view.isInDOM() && this.widgetContext !== context) this.domService.removeBlock()
             if (!this.view.isInDOM()) this.domService.tryInsert()
             else if (this.pendingLoad && context) this.loadData()
         } else {
@@ -125,6 +127,11 @@ export class App {
 
     onBlockInserted() {
         this.loadingWidget = null
+        this.rawData = null
+        this.updatedAt = null
+        this.availableDates = []
+        this.selectedDate = null
+        this.dateSelectionMode = 'period'
         this.widgetContext = ApiService.getRelationContext()
         if (!this.versionChecked) {
             this.versionChecked = true
@@ -133,7 +140,36 @@ export class App {
 
         this.setupLoadButton()
 
-        if (this.pendingLoad) this.loadData()
+        const widget = this.view.element
+        const context = this.widgetContext
+        this.cacheLookup = context ? widget : null
+        if (context) this.restoreCache(widget, context)
+        else if (this.pendingLoad) this.loadData()
+    }
+
+    async restoreCache(widget, context) {
+        const cached = await this.cache.read(context)
+        if (this.view.element !== widget || !this.view.isInDOM() || ApiService.getRelationContext() !== context) return
+        this.cacheLookup = null
+        if (cached) {
+            this.pendingLoad = false
+            this.displaySnapshot(cached.data, cached.updatedAt)
+        } else if (this.pendingLoad) this.loadData()
+    }
+
+    displaySnapshot(snapshot, updatedAt) {
+        this.rawData = snapshot
+        this.updatedAt = updatedAt
+        this.availableDates = extractUniqueTimestamps(snapshot.allGamesData).map(timestamp => ({
+            timestamp, label: formatDate(new Date(timestamp)),
+        }))
+        const refresh = this.view.element.querySelector('[data-stats="refresh"]')
+        if (refresh) {
+            refresh.hidden = false
+            refresh.onclick = () => this.loadData()
+        }
+        if (this.dateSelectionMode === 'specific-date' && this.selectedDate) this.updateDataForSpecificDate(this.selectedDate)
+        else this.updateDataForPeriod(this.selectedPeriod)
     }
 
     setupLoadButton() {
@@ -296,6 +332,7 @@ export class App {
 
     updateNotice(range, period = 'day') {
         const messages = []
+        if (this.updatedAt) messages.push(`Обновлено в ${new Date(this.updatedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`)
         const errors = this.rawData.errors || []
         if (errors.length) messages.push(`Данные неполные. Не загружено метрик: ${errors.length}. Итог учитывает только загруженные доходы.`, ...errors)
         if (this.rawData.periodErrors?.[period]) messages.push(`Не удалось получить итог периода: ${this.rawData.periodErrors[period]}. Показана сумма дневных значений графика; возможна разница округления.`)
@@ -410,6 +447,10 @@ export class App {
         const widget = this.view.element
         if (this.loadingWidget === widget) return
         const context = ApiService.getRelationContext()
+        if (this.cacheLookup === widget) {
+            this.pendingLoad = true
+            return
+        }
         if (!context && (this.pendingLoad || new URLSearchParams(window.location.hash.slice(1)).get('relation_context') === '-1')) {
             this.pendingLoad = true
             this.view.setNotice('Кабинет определяет аккаунт. Загрузка начнётся автоматически после выбора аккаунта.')
@@ -440,6 +481,12 @@ export class App {
             if (!current()) return
 
             if (!gamesInfo || gamesInfo.length === 0) {
+                await this.cache?.clear(context)
+                if (!current()) return
+                this.rawData = null
+                this.updatedAt = null
+                const refresh = widget.querySelector('[data-stats="refresh"]')
+                if (refresh) refresh.hidden = true
                 this.view.showButton()
                 this.view.setNotice('Нет опубликованных игр в выбранном аккаунте.')
                 this.setupLoadButton()
@@ -492,7 +539,7 @@ export class App {
                 players: totalPlayers,
             }
 
-            this.rawData = {
+            const snapshot = {
                 allGamesData: allGamesData,
                 allPlayersData: allPlayersData,
                 gamesInfo: gamesInfo,
@@ -508,31 +555,27 @@ export class App {
             // Period totals in the console retain precision that rounded daily chart values lose.
             const periods = ['week', 'month', 'month_current', 'month_prev', 'all-time']
             const totals = await Promise.allSettled(periods.map(period => {
-                const range = this.getPeriodRange(this.rawData, period)
+                const range = this.getPeriodRange(snapshot, period)
                 return ApiService.fetchRevenueTotals([range.start, range.end].map(value => new Date(value).toISOString().slice(0, 10)))
             }))
             if (!current()) return
             totals.forEach((result, index) => {
-                if (result.status === 'fulfilled') this.rawData.periodRevenues[periods[index]] = result.value
-                else this.rawData.periodErrors[periods[index]] = result.reason.message
+                if (result.status === 'fulfilled') snapshot.periodRevenues[periods[index]] = result.value
+                else snapshot.periodErrors[periods[index]] = result.reason.message
             })
 
-            const timestamps = extractUniqueTimestamps(allGamesData)
-            this.availableDates = timestamps.map((timestamp) => ({
-                timestamp: timestamp,
-                label: formatDate(new Date(timestamp)),
-            }))
-
-            if (this.dateSelectionMode === 'specific-date' && this.selectedDate) {
-                this.updateDataForSpecificDate(this.selectedDate)
-            } else {
-                this.updateDataForPeriod(this.selectedPeriod)
+            const updatedAt = Date.now()
+            if (!errors.length && !Object.keys(snapshot.periodErrors).length) {
+                await this.cache?.write(context, snapshot, updatedAt)
+                if (!current()) return
             }
+            this.displaySnapshot(snapshot, updatedAt)
 
         } catch (error) {
             if (!current()) return
             Logger.error('Data load failed:', error)
-            this.view.showButton()
+            if (this.rawData) this.displaySnapshot(this.rawData, this.updatedAt)
+            else this.view.showButton()
             this.view.setNotice(`Не удалось загрузить статистику: ${error.message}`)
             this.setupLoadButton()
         } finally {

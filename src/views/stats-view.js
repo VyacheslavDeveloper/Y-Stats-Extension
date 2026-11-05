@@ -248,6 +248,13 @@ export class StatsView {
 
         header.appendChild(title)
         header.appendChild(dateSpan)
+        const refresh = document.createElement('button')
+        refresh.type = 'button'
+        refresh.className = 'stats-period-btn'
+        refresh.dataset.stats = 'refresh'
+        refresh.textContent = 'Обновить'
+        refresh.hidden = true
+        header.appendChild(refresh)
 
         const content = document.createElement('div')
         content.className = 'stats-content'
