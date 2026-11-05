@@ -119,6 +119,7 @@ export class App {
             if (!this.view.isInDOM()) this.domService.tryInsert()
             else if (this.pendingLoad && context) this.loadData()
         } else {
+            clearTimeout(this.cacheTimer)
             this.pendingLoad = false
             this.loadingWidget = null
             this.domService.removeBlock()
@@ -126,6 +127,7 @@ export class App {
     }
 
     onBlockInserted() {
+        clearTimeout(this.cacheTimer)
         this.loadingWidget = null
         this.rawData = null
         this.updatedAt = null
@@ -149,12 +151,29 @@ export class App {
 
     async restoreCache(widget, context) {
         const cached = await this.cache.read(context)
-        if (this.view.element !== widget || !this.view.isInDOM() || ApiService.getRelationContext() !== context) return
+        const current = () => this.view.element === widget && this.view.isInDOM() && ApiService.getRelationContext() === context
+        if (!current()) return
         this.cacheLookup = null
-        if (cached) {
-            this.pendingLoad = false
+        if (!cached) {
+            if (this.pendingLoad) this.loadData()
+            return
+        }
+
+        this.pendingLoad = false
+        const expire = () => {
+            if (!current()) return
+            this.view.setNotice('')
+            this.view.showButton()
+            this.setupLoadButton()
+        }
+        this.view.setNotice(`Сохранено в ${new Date(cached.updatedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`)
+        this.view.showCachedActions(() => {
+            if (!current()) return
+            clearTimeout(this.cacheTimer)
+            if (Date.now() >= cached.expiresAt || Date.now() < cached.updatedAt) return expire()
             this.displaySnapshot(cached.data, cached.updatedAt)
-        } else if (this.pendingLoad) this.loadData()
+        }, () => { if (current()) this.loadData() })
+        this.cacheTimer = setTimeout(expire, Math.max(0, cached.expiresAt - Date.now()))
     }
 
     displaySnapshot(snapshot, updatedAt) {
@@ -457,6 +476,7 @@ export class App {
             return
         }
 
+        clearTimeout(this.cacheTimer)
         this.pendingLoad = false
         this.widgetContext = context
         this.loadingWidget = widget
@@ -721,6 +741,7 @@ export class App {
     }
 
     destroy() {
+        clearTimeout(this.cacheTimer)
         this.domService.stopObserver()
         this.domService.stopPeriodicCheck()
         this.domService.stopUrlMonitoring()

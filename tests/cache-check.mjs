@@ -29,7 +29,7 @@ mock.timers.enable({ apis: ['Date'], now })
 try {
     const cache = new StatsCache()
     await cache.write('111', snapshot, now)
-    // A new widget must wait for the cabinet's account ID, then restore even if the user clicked early.
+    // Early clicks must not reveal money when the cabinet resolves the account after F5.
     const browserGlobals = { window: globalThis.window, document: globalThis.document, fetch: globalThis.fetch }
     try {
         globalThis.window = { location: { hash: '#relation_context=-1', pathname: '/console/applications' } }
@@ -43,6 +43,8 @@ try {
             element: null,
             isInDOM() { return this.element !== null },
             setNotice(message) { this.notice = message },
+            showButton() { this.show = null; this.refresh = null },
+            showCachedActions(show, refresh) { this.show = show; this.refresh = refresh },
             showResults(row) { this.result = row },
         }
         app.domService.removeBlock = () => { app.view.element = null }
@@ -57,13 +59,31 @@ try {
         window.location.hash = '#relation_context=111'
         app.handleUrlChange(window.location.pathname)
         await new Promise(resolve => setTimeout(resolve, 0))
-        assert.equal(app.view.result.amount, 100, 'F5 must restore the actual period income')
+        assert.equal(app.rawData, null)
+        assert.equal(app.view.result, undefined, 'Cached income must stay hidden after F5')
+        assert.equal(typeof app.view.show, 'function')
+        assert.equal(typeof app.view.refresh, 'function')
+        app.view.show()
+        assert.equal(app.view.result.amount, 100, 'Show must reveal the cached income')
         assert.equal(app.updatedAt, now)
         assert.equal(networkCalls, 0, 'F5 and the queued click must not refetch metrics')
         window.location.hash = '#relation_context=222'
         app.handleUrlChange(window.location.pathname)
         await new Promise(resolve => setTimeout(resolve, 0))
         assert.equal(app.rawData, null, 'Switching to an uncached account must discard the rendered snapshot')
+        mock.timers.setTime(now + tenMinutes - 20)
+        window.location.hash = '#relation_context=111'
+        app.handleUrlChange(window.location.pathname)
+        await new Promise(resolve => setTimeout(resolve, 0))
+        const lateClick = app.view.show
+        assert.equal(typeof lateClick, 'function')
+        mock.timers.setTime(now + tenMinutes)
+        await new Promise(resolve => setTimeout(resolve, 30))
+        assert.equal(app.view.show, null, 'An idle widget must return to the ordinary load button at expiry')
+        lateClick()
+        assert.equal(app.rawData, null, 'A delayed click must never reveal an expired snapshot')
+        assert.equal(networkCalls, 0)
+        mock.timers.setTime(now)
     } finally {
         for (const [key, value] of Object.entries(browserGlobals)) {
             if (value === undefined) delete globalThis[key]

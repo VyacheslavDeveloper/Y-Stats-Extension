@@ -40,7 +40,9 @@ export class StatsCache {
             if (!Number.isFinite(value.updatedAt) || age < 0 || age >= CACHE_TTL || !sameDay || value.context !== context || !isSnapshot(value.data)) {
                 return null
             }
-            return value
+            const nextReportDay = new Date(value.data.loadedAt)
+            nextReportDay.setUTCHours(24, 0, 0, 0)
+            return { ...value, expiresAt: Math.min(value.updatedAt + CACHE_TTL, nextReportDay.getTime()) }
         } catch (error) {
             Logger.warn('Statistics cache read failed:', error.message)
             return null

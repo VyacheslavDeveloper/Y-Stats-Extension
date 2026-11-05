@@ -83,6 +83,21 @@ export class StatsView {
         content.appendChild(this._createLoadButtonWrapper())
     }
 
+    showCachedActions(onShow, onRefresh) {
+        const content = this._getContentAndClear()
+        if (!content) return
+        const center = this._createDiv('stats-center')
+        for (const [label, handler] of [['Показать', onShow], ['Обновить', onRefresh]]) {
+            const button = document.createElement('button')
+            button.type = 'button'
+            button.className = 'stats-load-button'
+            button.textContent = label
+            button.onclick = handler
+            center.appendChild(button)
+        }
+        content.appendChild(center)
+    }
+
     showResults(data, selectedPeriod = 'day', availableDates = [], selectedDate = null) {
         this._showDateElement()
         const content = this._getContentAndClear()
