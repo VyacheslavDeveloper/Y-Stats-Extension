@@ -87,14 +87,11 @@ export class StatsView {
         const content = this._getContentAndClear()
         if (!content) return
         const center = this._createDiv('stats-center')
-        for (const [label, handler] of [['Показать', onShow], ['Обновить', onRefresh]]) {
-            const button = document.createElement('button')
-            button.type = 'button'
-            button.className = 'stats-load-button'
-            button.textContent = label
-            button.onclick = handler
-            center.appendChild(button)
-        }
+        const show = this._actionButton('Показать', 'show')
+        show.onclick = onShow
+        const refresh = this._actionButton('Обновить', 'refresh')
+        refresh.onclick = onRefresh
+        center.append(show, refresh)
         content.appendChild(center)
     }
 
@@ -219,14 +216,26 @@ export class StatsView {
         return div
     }
 
+    _actionButton(label, action) {
+        const paths = {
+            show: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z',
+            refresh: 'M20 4v6h-6M20 10a8 8 0 1 0 0 5',
+            load: 'M4 4v16h16M8 16v-4m5 4V7m5 9v-6',
+        }
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.className = action === 'refresh' ? 'stats-load-button stats-load-button--secondary' : 'stats-load-button'
+        button.innerHTML = `<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="${paths[action]}"/></svg>`
+        button.append(label)
+        return button
+    }
+
     _createLoadButtonWrapper() {
         const center = document.createElement('div')
         center.className = 'stats-center'
 
-        const button = document.createElement('button')
-        button.className = 'stats-load-button'
+        const button = this._actionButton('Загрузить статистику', 'load')
         button.setAttribute('data-stats', DATA_ATTRIBUTES.LOAD_BUTTON)
-        button.textContent = 'Загрузить статистику'
 
         center.appendChild(button)
         return center
@@ -263,11 +272,8 @@ export class StatsView {
 
         header.appendChild(title)
         header.appendChild(dateSpan)
-        const refresh = document.createElement('button')
-        refresh.type = 'button'
-        refresh.className = 'stats-period-btn'
+        const refresh = this._actionButton('Обновить', 'refresh')
         refresh.dataset.stats = 'refresh'
-        refresh.textContent = 'Обновить'
         refresh.hidden = true
         header.appendChild(refresh)
 
