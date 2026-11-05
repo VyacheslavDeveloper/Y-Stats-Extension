@@ -353,7 +353,6 @@ export class App {
 
     updateNotice(range, period = 'day') {
         const messages = []
-        if (this.updatedAt) messages.push(`Обновлено в ${new Date(this.updatedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`)
         const errors = this.rawData.errors || []
         if (errors.length) messages.push(`Данные неполные. Не загружено метрик: ${errors.length}. Итог учитывает только загруженные доходы.`, ...errors)
         const unknownPublicationDates = this.rawData.gamesInfo.filter(game => !Number.isFinite(game.publishedAt)).length
@@ -365,12 +364,17 @@ export class App {
             ? prepareChartData(this.rawData.allGamesData, range.start, range.end, this.rawData.gamesInfo).points.some(point => point.partial)
             : rows.some(row => row.totalRevenue === null && !row.beforePublication)
         if (partialRevenue) messages.push('У части игр нет значения дохода за выбранные дни. Это не обязательно сбой: показана сумма доступных значений.')
-        if (this.activeTab !== 'chart' && rows.some(row => row.players === null && !row.beforePublication)) messages.push('Данные игроков доступны не за все выбранные дни или игры. Неизвестные значения показаны прочерком.')
+        const partialPlayers = this.activeTab !== 'chart' && rows.some(row => row.players === null && !row.beforePublication)
+        if (partialPlayers) messages.push('Данные игроков доступны не за все выбранные дни или игры. Неизвестные значения показаны прочерком.')
         const lastTimestamp = this.rawData.lastTimestamp
-        if (lastTimestamp) messages.push(`Последний день с данными графиков: ${formatDate(new Date(lastTimestamp))}`)
         if (!lastTimestamp || reportDay(range.start) > reportDay(lastTimestamp)) messages.push('Данные графиков за выбранный период ещё не доступны. Отсутствующие значения показаны прочерком.')
         else if (reportDay(range.end) > reportDay(lastTimestamp)) messages.push('Выбранный период включает дни, за которые графики пока не содержат данных.')
-        this.view.setNotice(messages.join('\n'))
+        let summary = 'Даты публикации'
+        if (errors.length || this.rawData.periodErrors?.[period]) summary = 'Ошибка загрузки'
+        else if (!lastTimestamp || reportDay(range.start) > reportDay(lastTimestamp)) summary = 'Графики пока недоступны'
+        else if (reportDay(range.end) > reportDay(lastTimestamp)) summary = 'Есть дни без данных'
+        else if (partialRevenue || partialPlayers) summary = 'Есть пропуски'
+        this.view.setNotice(messages.join('\n'), { updatedAt: this.updatedAt, lastTimestamp, summary })
     }
 
     getPeriodRange(rawData, period) {

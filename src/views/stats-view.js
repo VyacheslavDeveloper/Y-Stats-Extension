@@ -1,4 +1,4 @@
-import { formatMoney, formatCompactNumber, hexToRgba } from '../utils/formatters.js'
+import { formatDate, formatMoney, formatCompactNumber, hexToRgba } from '../utils/formatters.js'
 import { SELECTORS, DATA_ATTRIBUTES, CHART_COLORS } from '../config/constants.js'
 
 export class StatsView {
@@ -147,11 +147,53 @@ export class StatsView {
         content.appendChild(this._createChart(chartData))
     }
 
-    setNotice(message) {
+    setNotice(message, report) {
         const notice = this.element?.querySelector('[data-stats="notice"]')
         if (!notice) return
-        notice.textContent = message
-        notice.hidden = !message
+        if (!report) {
+            notice.textContent = message
+            notice.hidden = !message
+            return
+        }
+
+        const wasOpen = notice.querySelector('details')?.open
+        const facts = []
+        if (report.updatedAt) facts.push(['Обновлено', new Date(report.updatedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })])
+        if (report.lastTimestamp) facts.push(['Графики по', formatDate(new Date(report.lastTimestamp))])
+        notice.replaceChildren()
+        notice.hidden = !facts.length && !message
+        const details = message ? document.createElement('details') : null
+        const panel = details || document.createElement('div')
+        panel.style.cssText = 'padding:8px 12px;background:rgba(30,22,64,.16);border-radius:8px'
+        const bar = document.createElement(details ? 'summary' : 'div')
+        bar.style.cssText = 'display:flex;flex-wrap:wrap;align-items:center;gap:6px 20px;list-style:none'
+        for (const [label, value] of facts) {
+            const fact = document.createElement('span')
+            const number = document.createElement('strong')
+            number.textContent = value
+            fact.append(label + ' ', number)
+            bar.appendChild(fact)
+        }
+        panel.appendChild(bar)
+        notice.appendChild(panel)
+        if (!details) return
+
+        details.open = Boolean(wasOpen)
+        bar.style.cursor = 'pointer'
+        const badge = document.createElement('span')
+        badge.style.cssText = 'margin-inline-start:auto;padding:2px 9px;border-radius:12px;background:rgba(32,24,58,.34);color:#fff1c6;font-weight:600'
+        const updateBadge = () => { badge.textContent = report.summary + (details.open ? '  ▴' : '  ▾') }
+        updateBadge()
+        details.addEventListener('toggle', updateBadge)
+        bar.appendChild(badge)
+        const list = document.createElement('ul')
+        list.style.cssText = 'margin:8px 0 0;padding-inline-start:20px;overflow-wrap:anywhere;max-height:8em;overflow-y:auto'
+        for (const line of message.split('\n')) {
+            const item = document.createElement('li')
+            item.textContent = line
+            list.appendChild(item)
+        }
+        details.appendChild(list)
     }
 
     showVersionInfo(info) {
