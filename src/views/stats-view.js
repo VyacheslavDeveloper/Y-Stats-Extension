@@ -87,6 +87,7 @@ export class StatsView {
         const content = this._getContentAndClear()
         if (!content) return
         const center = this._createDiv('stats-center')
+        center.style.gap = '12px'
         const show = this._actionButton('Показать', 'show')
         show.onclick = onShow
         const refresh = this._actionButton('Обновить', 'refresh')
