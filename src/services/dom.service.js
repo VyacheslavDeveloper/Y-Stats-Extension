@@ -8,10 +8,14 @@ export class DomService {
         this.initAttempts = 0
         this.urlCheckInterval = null
         this.periodicCheckInterval = null
-        this.currentUrl = window.location.pathname
+        this.currentUrl = window.location.href
         this.popstateHandler = null
-        this.linkClickHandler = null
         this.onPageChange = null
+        this.onBlockInserted = null
+    }
+
+    setInsertCallback(callback) {
+        this.onBlockInserted = callback
     }
 
     insert() {
@@ -36,26 +40,31 @@ export class DomService {
         if (appsHeader && page) {
             const statsBlock = this.view.create()
             mainElement.insertBefore(statsBlock, page)
+            this.initAttempts = 0
+            this.onBlockInserted?.()
             return true
         }
 
         return false
     }
 
-    tryInsert(onSuccess) {
+    tryInsert() {
+        if (!isApplicationsPage()) {
+            this.initAttempts = 0
+            return
+        }
         this.initAttempts++
         const success = this.insert()
 
         if (success) {
-            if (onSuccess) {
-                onSuccess()
-            }
+            this.initAttempts = 0
         } else if (this.initAttempts < TIMINGS.MAX_INIT_ATTEMPTS) {
-            setTimeout(() => this.tryInsert(onSuccess), TIMINGS.INIT_RETRY_INTERVAL)
+            setTimeout(() => this.tryInsert(), TIMINGS.INIT_RETRY_INTERVAL)
         }
     }
 
     startObserver() {
+        if (this.observer) return
         this.observer = new MutationObserver(() => {
             if (isApplicationsPage() && !this.view.isInDOM()) {
                 this.insert()
@@ -64,9 +73,8 @@ export class DomService {
             }
         })
 
-        const mainElement = document.querySelector(SELECTORS.MAIN_CONTAINER)
-        if (mainElement) {
-            this.observer.observe(mainElement, {
+        if (document.body) {
+            this.observer.observe(document.body, {
                 childList: true,
                 subtree: true,
             })
@@ -74,6 +82,7 @@ export class DomService {
     }
 
     startPeriodicCheck() {
+        if (this.periodicCheckInterval !== null) return
         this.periodicCheckInterval = setInterval(() => {
             if (isApplicationsPage() && !this.view.isInDOM()) {
                 this.insert()
@@ -85,29 +94,31 @@ export class DomService {
 
     startUrlMonitoring(onPageChange) {
         this.onPageChange = onPageChange
+        if (this.urlCheckInterval !== null) return
 
         this.urlCheckInterval = setInterval(() => {
-            const newUrl = window.location.pathname
+            const newUrl = window.location.href
 
             if (newUrl !== this.currentUrl) {
                 this.currentUrl = newUrl
 
                 if (this.onPageChange) {
-                    this.onPageChange(newUrl)
+                    this.onPageChange(window.location.pathname)
                 }
             }
         }, MONITORING.URL_CHECK_INTERVAL)
 
         const popstateHandler = () => {
-            const newUrl = window.location.pathname
+            const newUrl = window.location.href
             if (newUrl !== this.currentUrl) {
                 this.currentUrl = newUrl
                 if (this.onPageChange) {
-                    this.onPageChange(newUrl)
+                    this.onPageChange(window.location.pathname)
                 }
             }
         }
         window.addEventListener('popstate', popstateHandler)
+        window.addEventListener('hashchange', popstateHandler)
         this.popstateHandler = popstateHandler
 
         if (!window.__yandexStatsHistoryPatched) {
@@ -137,25 +148,6 @@ export class DomService {
 
             window.__yandexStatsHistoryPatched = true
         }
-
-        this.linkClickHandler = (e) => {
-            const target = e.target.closest('a')
-            if (target && target.href) {
-                const url = new URL(target.href)
-                if (url.hostname === window.location.hostname) {
-                    const path = url.pathname
-
-                    if (!isApplicationsPage(path) && this.view.isInDOM()) {
-                        const block = document.getElementById(SELECTORS.STATS_BLOCK_ID)
-                        if (block) {
-                            block.style.opacity = '0'
-                            block.style.pointerEvents = 'none'
-                        }
-                    }
-                }
-            }
-        }
-        document.addEventListener('click', this.linkClickHandler, true)
     }
 
     stopObserver() {
@@ -173,12 +165,8 @@ export class DomService {
 
         if (this.popstateHandler) {
             window.removeEventListener('popstate', this.popstateHandler)
+            window.removeEventListener('hashchange', this.popstateHandler)
             this.popstateHandler = null
-        }
-
-        if (this.linkClickHandler) {
-            document.removeEventListener('click', this.linkClickHandler, true)
-            this.linkClickHandler = null
         }
 
         this.onPageChange = null
@@ -192,6 +180,7 @@ export class DomService {
     }
 
     removeBlock() {
+        this.view.destroy()
         const existingBlock = document.getElementById(SELECTORS.STATS_BLOCK_ID)
         if (existingBlock) {
             existingBlock.remove()

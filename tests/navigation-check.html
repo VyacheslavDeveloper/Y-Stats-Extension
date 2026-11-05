@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Widget navigation regression check</title>
+<meta name="csrf-token" content="test-token">
+<h1>Widget navigation regression check</h1>
+<pre id="result">Running...</pre>
+<main class="main"><div class="apps-header"></div><div class="page page_full-height page_width_full"></div></main>
+<script type="module">
+import { App } from '/src/app.js'
+import { VersionService } from '/src/services/version.service.js'
+import { SELECTORS, TIMINGS, MONITORING, VERSION } from '/src/config/constants.js'
+
+const result = document.getElementById('result')
+const nativeTimeout = window.setTimeout.bind(window)
+const nativeInterval = window.setInterval.bind(window)
+const nativeClearInterval = window.clearInterval.bind(window)
+const nativeReplaceState = history.replaceState.bind(history)
+const originalFetch = window.fetch
+const originalVersionCheck = VersionService.checkVersion
+const intervals = new Set()
+const pause = delay => new Promise(resolve => nativeTimeout(resolve, delay))
+const assert = (condition, message) => { if (!condition) throw new Error(message) }
+const waitFor = async (condition, message) => {
+    for (let attempt = 0; attempt < 100; attempt++) {
+        if (condition()) return
+        await pause(10)
+    }
+    throw new Error(message)
+}
+const listMarkup = '<div class="apps-header"></div><div class="page page_full-height page_width_full"></div>'
+let listRequests = 0
+let failNextRequest = false
+let deferResponse
+let nextResponse
+let app
+
+// Only external I/O and timer delays are replaced; App, StatsView and DOM remain real.
+window.setTimeout = (callback, delay, ...args) => nativeTimeout(callback,
+    delay === TIMINGS.OBSERVER_START_DELAY ? 0 : delay, ...args)
+window.setInterval = (callback, delay, ...args) => {
+    const id = nativeInterval(callback, delay === MONITORING.PERIODIC_CHECK_INTERVAL ? 25 : delay, ...args)
+    intervals.add(id)
+    return id
+}
+window.clearInterval = id => { intervals.delete(id); nativeClearInterval(id) }
+VersionService.checkVersion = async () => ({ status: 'update-available', currentVersion: '1.0.1', remoteVersion: '1.0.2', url: VERSION.REPO_URL + '/releases/tag/v1.0.2' })
+window.fetch = async url => {
+    const path = new URL(url, location.origin).pathname
+    if (path === '/console/applications') {
+        return { ok: true, text: async () => '{"secretkey":"test-token"}' }
+    }
+    assert(path === '/console/api/applications', `Unexpected request: ${path}`)
+    listRequests++
+    if (nextResponse) {
+        const response = nextResponse
+        nextResponse = null
+        return response
+    }
+    if (location.hash.includes('relation_context=123')) {
+        assert(new URL(url).searchParams.get('relation_context') === '123', 'Wrong account in the list request')
+    }
+    if (failNextRequest) {
+        failNextRequest = false
+        return { ok: false, status: 503 }
+    }
+    return { ok: true, json: async () => [] }
+}
+
+async function checkButton(label, expectedNotice = 'Нет опубликованных игр в выбранном аккаунте.') {
+    const before = listRequests
+    const button = document.querySelector('[data-stats="load-button"]')
+    assert(button && !button.disabled, `${label}: load button is unavailable`)
+    button.click()
+    await waitFor(() => document.querySelector('[data-stats="notice"]')?.textContent.includes(expectedNotice),
+        `${label}: clicking the button did not render the request result`)
+    assert(listRequests === before + 1, `${label}: expected one games request`)
+    assert(!document.querySelector('[data-stats="load-button"]').disabled, `${label}: retry button stayed disabled`)
+    assert(!document.querySelector('[data-stats="version"]').hidden && document.querySelector('[data-stats="version"] a').href === VERSION.REPO_URL + '/releases/tag/v1.0.2', `${label}: existing release link was lost`)
+    result.textContent += `\nPASS: ${label}`
+}
+
+try {
+    nativeReplaceState(null, '', '/console/applications')
+    app = new App()
+    await app.init()
+    await pause(20)
+    await checkButton('initial mount')
+
+    // The console cancels navigation when a draft toggle inside a game link is clicked.
+    document.querySelector(SELECTORS.PAGE_CONTAINER).innerHTML = `
+        <a href="/console/application/101"><div id="draft-toggle" role="button" tabindex="0">Toggle draft</div></a>
+        <div id="draft-row" hidden>Draft game</div>`
+    const toggle = document.getElementById('draft-toggle')
+    const draft = document.getElementById('draft-row')
+    const block = document.getElementById(SELECTORS.STATS_BLOCK_ID)
+    const notice = block.querySelector('[data-stats="notice"]').textContent
+    toggle.addEventListener('click', event => {
+        event.preventDefault()
+        event.stopPropagation()
+        draft.hidden = !draft.hidden
+    })
+    for (const expanded of [true, false, true, false]) {
+        toggle.click()
+        await pause(20)
+        assert(location.pathname === '/console/applications', 'Draft toggle navigated away from the list')
+        assert(draft.hidden !== expanded, 'Draft toggle did not change the draft row')
+        assert(document.getElementById(SELECTORS.STATS_BLOCK_ID) === block, 'Draft toggle replaced the widget')
+        assert(getComputedStyle(block).opacity !== '0' && getComputedStyle(block).pointerEvents !== 'none',
+            'Draft toggle hid or disabled the widget without navigation')
+        assert(block.querySelector('[data-stats="notice"]').textContent === notice, 'Draft toggle lost the displayed result')
+    }
+    result.textContent += '\nPASS: opening and closing a draft keeps the widget visible and usable'
+
+    for (let visit = 1; visit <= 3; visit++) {
+        history.pushState(null, '', '/console/application/101')
+        document.querySelector('main').replaceChildren()
+        await waitFor(() => !document.getElementById(SELECTORS.STATS_BLOCK_ID), 'Widget remained on a game page')
+        history.pushState(null, '', '/console/applications')
+        document.querySelector('main').innerHTML = listMarkup
+        await waitFor(() => document.querySelector('[data-stats="load-button"]'), 'Widget did not return to the list')
+        await checkButton(`return through list navigation ${visit}`)
+        await pause(20)
+        assert(intervals.size === 2, 'Repeated navigation leaked monitoring intervals')
+    }
+
+    history.replaceState(null, '', '#relation_context=-1')
+    const before = listRequests
+    document.querySelector('[data-stats="load-button"]').click()
+    document.querySelector('[data-stats="load-button"]').click()
+    assert(document.querySelector('[data-stats="notice"]').textContent.includes('определяет аккаунт'), 'Early click received no feedback')
+    assert(listRequests === before, 'Games requested before account selection')
+    history.replaceState(null, '', '#relation_context=123')
+    await waitFor(() => listRequests === before + 1 && document.querySelector('[data-stats="notice"]')?.textContent.includes('Нет опубликованных игр'), 'First click did not resume automatically')
+    result.textContent += '\nPASS: one early click resumes for the resolved account'
+
+    nextResponse = new Promise(resolve => { deferResponse = resolve })
+    document.querySelector('[data-stats="load-button"]').click()
+    await waitFor(() => !nextResponse, 'Request did not start')
+    history.pushState(null, '', '/console/application/101')
+    document.querySelector('main').replaceChildren()
+    await pause(20)
+    history.pushState(null, '', '/console/applications#relation_context=123')
+    document.querySelector('main').innerHTML = listMarkup
+    await waitFor(() => document.querySelector('[data-stats="load-button"]'), 'Button missing after interrupted load')
+    await checkButton('return while the previous request is in flight')
+    deferResponse({ ok: false, status: 503 })
+    await pause(20)
+    assert(!document.querySelector('[data-stats="notice"]').textContent.includes('503'), 'Stale response replaced the new result')
+
+    // React can replace the main container without a pathname change.
+    app.domService.stopPeriodicCheck()
+    const replacement = document.createElement('main')
+    replacement.className = 'main'
+    replacement.innerHTML = listMarkup
+    document.querySelector('main').replaceWith(replacement)
+    await waitFor(() => document.querySelector('[data-stats="load-button"]'), 'Replacing main lost the widget')
+    await checkButton('main container replacement')
+
+    app.domService.startPeriodicCheck()
+    app.domService.stopObserver()
+    replacement.innerHTML = listMarkup
+    await waitFor(() => document.querySelector('[data-stats="load-button"]'), 'Periodic recovery did not insert the widget')
+    await checkButton('periodic recovery')
+
+    failNextRequest = true
+    await checkButton('failed request restores a working button', 'HTTP error: 503')
+    await checkButton('retry after failed request')
+    result.textContent = `PASS: all navigation checks\n${result.textContent}`
+    document.title = 'PASS: widget navigation'
+} catch (error) {
+    result.textContent = `FAIL: ${error.message}\n${result.textContent}`
+    document.title = 'FAIL: widget navigation'
+} finally {
+    if (app) {
+        app.domService.stopObserver()
+        app.domService.stopPeriodicCheck()
+        app.domService.stopUrlMonitoring()
+    }
+    for (const id of intervals) nativeClearInterval(id)
+    window.fetch = originalFetch
+    VersionService.checkVersion = originalVersionCheck
+    window.setTimeout = nativeTimeout
+    window.setInterval = nativeInterval
+    window.clearInterval = nativeClearInterval
+}
+</script>
+</html>

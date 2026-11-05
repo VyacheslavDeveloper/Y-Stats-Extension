@@ -3,7 +3,7 @@ import { ApiService } from './services/api.service.js'
 import { DomService } from './services/dom.service.js'
 import { VersionService } from './services/version.service.js'
 import { Logger } from './services/logger.service.js'
-import { TIMINGS, API, DATA_ATTRIBUTES, CHART } from './config/constants.js'
+import { API, DATA_ATTRIBUTES, CHART } from './config/constants.js'
 import { formatDate } from './utils/formatters.js'
 import { normalizeRequestDelay } from './utils/validators.js'
 import {
@@ -25,7 +25,8 @@ export class App {
         this.rawData = null
         this.selectedPeriod = 'month_current'
         this.csrfToken = null
-        this.isLoading = false
+        this.loadingWidget = null
+        this.pendingLoad = false
         this.settings = {
             enabled: true,
             requestDelay: API.REQUEST_DELAY,
@@ -48,21 +49,14 @@ export class App {
             return
         }
 
-        const token = await ApiService.fetchAndParseCsrfToken()
-        if (token) {
-            this.csrfToken = token
-            Logger.info('CSRF token received')
-        } else {
-            Logger.warn('Failed to get CSRF token')
-        }
-
         this.domService.startUrlMonitoring((newUrl) => {
             this.handleUrlChange(newUrl)
         })
 
-        this.domService.tryInsert(() => {
-            this.onBlockInserted()
-        })
+        this.domService.setInsertCallback(() => this.onBlockInserted())
+        this.domService.startObserver()
+        this.domService.startPeriodicCheck()
+        this.domService.tryInsert()
     }
 
     async loadSettings() {
@@ -118,34 +112,34 @@ export class App {
 
     handleUrlChange(newUrl) {
         if (isApplicationsPage(newUrl)) {
-            if (!this.view.isInDOM()) {
-                this.domService.tryInsert(() => {
-                    this.onBlockInserted()
-                })
-            }
+            const context = ApiService.getRelationContext()
+            if (this.widgetContext && this.widgetContext !== context) this.domService.removeBlock()
+            if (!this.view.isInDOM()) this.domService.tryInsert()
+            else if (this.pendingLoad && context) this.loadData()
         } else {
+            this.pendingLoad = false
+            this.loadingWidget = null
             this.domService.removeBlock()
         }
     }
 
     onBlockInserted() {
+        this.loadingWidget = null
+        this.widgetContext = ApiService.getRelationContext()
         if (!this.versionChecked) {
             this.versionChecked = true
             this.renderVersionInfo()
-        }
+        } else if (this.versionInfo) this.view.showVersionInfo(this.versionInfo)
 
         this.setupLoadButton()
 
-        setTimeout(() => {
-            this.domService.startObserver()
-            this.domService.startPeriodicCheck()
-        }, TIMINGS.OBSERVER_START_DELAY)
+        if (this.pendingLoad) this.loadData()
     }
 
     setupLoadButton() {
         const button = document.querySelector(`[data-stats="${DATA_ATTRIBUTES.LOAD_BUTTON}"]`)
         if (button) {
-            button.addEventListener('click', () => this.loadData())
+            button.onclick = () => this.loadData()
         }
     }
 
@@ -405,6 +399,7 @@ export class App {
     async renderVersionInfo() {
         try {
             const info = await VersionService.checkVersion()
+            this.versionInfo = info
             this.view.showVersionInfo(info)
         } catch (error) {
             Logger.warn('Version info render skipped:', error.message)
@@ -412,27 +407,26 @@ export class App {
     }
 
     async loadData() {
-        if (this.isLoading) {
-            Logger.info('Loading is already in progress')
+        const widget = this.view.element
+        if (this.loadingWidget === widget) return
+        const context = ApiService.getRelationContext()
+        if (!context && (this.pendingLoad || new URLSearchParams(window.location.hash.slice(1)).get('relation_context') === '-1')) {
+            this.pendingLoad = true
+            this.view.setNotice('Кабинет определяет аккаунт. Загрузка начнётся автоматически после выбора аккаунта.')
             return
         }
 
-        this.isLoading = true
-        const button = document.querySelector(`[data-stats="${DATA_ATTRIBUTES.LOAD_BUTTON}"]`)
-        
-        if (button) {
-            button.disabled = true
-            button.style.opacity = '0.5'
-            button.style.cursor = 'not-allowed'
-        }
-
+        this.pendingLoad = false
+        this.widgetContext = context
+        this.loadingWidget = widget
+        const current = () => this.loadingWidget === widget && this.view.element === widget && ApiService.getRelationContext() === context
         try {
             this.view.setNotice('')
             this.view.showInitialLoading()
 
             if (!this.csrfToken) {
-                Logger.error('CSRF token is missing')
                 const token = await ApiService.fetchAndParseCsrfToken()
+                if (!current()) return
                 if (token) {
                     this.csrfToken = token
                 } else {
@@ -443,6 +437,7 @@ export class App {
             const today = new Date()
 
             const gamesInfo = await ApiService.fetchGamesList()
+            if (!current()) return
 
             if (!gamesInfo || gamesInfo.length === 0) {
                 this.view.showButton()
@@ -457,12 +452,14 @@ export class App {
             const dateRange = ApiService.getAnalyticsDateRange(today)
 
             for (let i = 0; i < gamesInfo.length; i++) {
+                if (!current()) return
                 const gameId = gamesInfo[i].id
 
                 const results = await Promise.allSettled([
                     ApiService.fetchAnalyticsData(this.csrfToken, gameId, CHART.SLUG, dateRange),
                     ApiService.fetchAnalyticsData(this.csrfToken, gameId, CHART.PLAYERS_SLUG, dateRange),
                 ])
+                if (!current()) return
                 for (const [index, result] of results.entries()) {
                     const target = index === 0 ? allGamesData : allPlayersData
                     target.push(result.status === 'fulfilled' ? result.value : null)
@@ -514,6 +511,7 @@ export class App {
                 const range = this.getPeriodRange(this.rawData, period)
                 return ApiService.fetchRevenueTotals([range.start, range.end].map(value => new Date(value).toISOString().slice(0, 10)))
             }))
+            if (!current()) return
             totals.forEach((result, index) => {
                 if (result.status === 'fulfilled') this.rawData.periodRevenues[periods[index]] = result.value
                 else this.rawData.periodErrors[periods[index]] = result.reason.message
@@ -532,18 +530,13 @@ export class App {
             }
 
         } catch (error) {
+            if (!current()) return
             Logger.error('Data load failed:', error)
             this.view.showButton()
             this.view.setNotice(`Не удалось загрузить статистику: ${error.message}`)
             this.setupLoadButton()
         } finally {
-            this.isLoading = false
-            
-            if (button) {
-                button.disabled = false
-                button.style.opacity = '1'
-                button.style.cursor = 'pointer'
-            }
+            if (this.loadingWidget === widget) this.loadingWidget = null
         }
     }
 
