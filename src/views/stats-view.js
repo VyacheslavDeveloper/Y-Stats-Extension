@@ -225,7 +225,10 @@ export class StatsView {
         const button = document.createElement('button')
         button.type = 'button'
         button.className = action === 'refresh' ? 'stats-load-button stats-load-button--secondary' : 'stats-load-button'
-        button.innerHTML = `<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="${paths[action]}"/></svg>`
+        // The browser may still be using the previous content stylesheet, which spins button SVGs.
+        button.innerHTML = `<svg aria-hidden="true" focusable="false" width="18" height="18" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+            style="animation: none; flex: none"><path d="${paths[action]}"/></svg>`
         button.append(label)
         return button
     }
