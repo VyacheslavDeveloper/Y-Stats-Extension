@@ -45,6 +45,6 @@ export function hexToRgba(hex, alpha) {
 }
 
 export function calculateRevenuePerPlayer(revenue, players) {
-    if (!players || players === 0) return 0
+    if (!players) return null
     return revenue / players
 }

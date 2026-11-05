@@ -107,7 +107,7 @@ export class StatsView {
         content.appendChild(this._createSelectorsWrapper(availableDates, selectedDate, selectedPeriod))
 
         content.appendChild(this._createStatsRow('stats-row--total', [
-            { label: 'Общий заработок', value: formatMoney(data.amount), size: 'large' },
+            { label: data.partial ? 'Заработок по доступным данным' : 'Общий заработок', value: formatMoney(data.amount), size: 'large' },
         ]))
 
         content.appendChild(this._createStatsRow('stats-row--sources', [
@@ -116,7 +116,7 @@ export class StatsView {
         ]))
 
         content.appendChild(this._createStatsRow('stats-row--players', [
-            { label: selectedPeriod === 'day' ? 'Игроков' : 'Игроко-дней', value: data.players === null ? '—' : (data.players || 0).toLocaleString('ru-RU'), size: 'medium' },
+            { label: selectedPeriod === 'day' ? 'Игроков' : 'Игроки, сумма по дням', value: data.players === null ? '—' : (data.players || 0).toLocaleString('ru-RU'), size: 'medium' },
         ]))
 
         content.appendChild(this._createStatsRow('stats-row--footer', [
@@ -413,6 +413,10 @@ export class StatsView {
         table.appendChild(tbody)
 
         tableWrapper.appendChild(table)
+        tableWrapper.appendChild(this._createDiv('stats-notice',
+            'Доход на 1 000 игроков = общий доход ÷ число игроков × 1 000.'
+            + (period === 'day' ? '' : ' За период игроки суммируются по дням: один человек может учитываться несколько раз.')
+            + ' При отсутствии данных или нуле игроков — прочерк.'))
         return tableWrapper
     }
 
@@ -426,8 +430,8 @@ export class StatsView {
             { sort: 'totalRevenue', label: 'Общий доход' },
             { sort: 'advertising', label: 'Реклама' },
             { sort: 'inApp', label: 'In-app' },
-            { sort: 'players', label: period === 'day' ? 'Игроки' : 'Игроко-дни' },
-            { sort: 'revenuePerPlayer', label: period === 'day' ? '₽/игрок' : '₽/игроко-день' },
+            { sort: 'players', label: period === 'day' ? 'Игроки' : 'Игроки, сумма по дням' },
+            { sort: 'revenuePerPlayer', label: 'Доход на 1 000 игроков' },
         ]
 
         headers.forEach(({ sort, label }) => {
@@ -450,6 +454,7 @@ export class StatsView {
 
     _createTableRow(game, period) {
         const row = document.createElement('tr')
+        if (game.beforePublication && game.totalRevenue === null) row.setAttribute('title', 'В выбранном периоде игра ещё не опубликована')
 
         const cells = [
             { className: 'game-name', label: 'Название', value: game.name || 'Неизвестная игра' },
@@ -457,8 +462,8 @@ export class StatsView {
             { className: 'revenue-cell', label: 'Общий доход', value: formatMoney(game.totalRevenue) },
             { className: 'revenue-cell', label: 'Реклама', value: formatMoney(game.advertising) },
             { className: 'revenue-cell', label: 'In-app', value: formatMoney(game.inApp) },
-            { className: 'players-cell', label: period === 'day' ? 'Игроки' : 'Игроко-дни', value: game.players === null ? '—' : (game.players || 0).toLocaleString('ru-RU') },
-            { className: 'revenue-cell', label: period === 'day' ? '₽/игрок' : '₽/игроко-день', value: formatMoney(game.revenuePerPlayer) },
+            { className: 'players-cell', label: period === 'day' ? 'Игроки' : 'Игроки, сумма по дням', value: game.players === null ? '—' : (game.players || 0).toLocaleString('ru-RU') },
+            { className: 'revenue-cell', label: 'Доход на 1 000 игроков', value: formatMoney(game.revenuePerPlayer === null ? null : game.revenuePerPlayer * 1000) },
         ]
 
         cells.forEach(({ className, label, value }) => {
@@ -505,6 +510,9 @@ export class StatsView {
 
         const { points } = chartData
         const labels = points.map(p => p.dateLabel)
+        if (points.some(point => point.partial && point.total !== null)) {
+            container.appendChild(this._createDiv('stats-notice', 'Жёлтые точки и пунктир — дни без значения дохода у части игр, не обязательно сбой. Дни до известной даты публикации не считаются пропусками.'))
+        }
 
         // Create chart after canvas is in DOM (requestAnimationFrame ensures canvas is rendered)
         requestAnimationFrame(() => {
@@ -517,12 +525,12 @@ export class StatsView {
                 data: {
                     labels,
                     datasets: [
-                        this._createDatasetConfig('Всего', points.map(p => p.total), CHART_COLORS.total, gradients.total, { borderWidth: 3, hidden: false }),
-                        this._createDatasetConfig('Реклама', points.map(p => p.advertising), CHART_COLORS.advertising, gradients.advertising, { hidden: true }),
-                        this._createDatasetConfig('In-app', points.map(p => p.inApp), CHART_COLORS.inApp, gradients.inApp, { hidden: true }),
+                        this._createDatasetConfig('Всего', points.map(p => p.total), CHART_COLORS.total, gradients.total, { borderWidth: 3, hidden: false }, points),
+                        this._createDatasetConfig('Реклама', points.map(p => p.advertising), CHART_COLORS.advertising, gradients.advertising, { hidden: true }, points),
+                        this._createDatasetConfig('In-app', points.map(p => p.inApp), CHART_COLORS.inApp, gradients.inApp, { hidden: true }, points),
                     ],
                 },
-                options: this._getChartOptions(),
+                options: this._getChartOptions(points),
             })
         })
 
@@ -545,8 +553,9 @@ export class StatsView {
         }
     }
 
-    _createDatasetConfig(label, data, color, gradient, options = {}) {
+    _createDatasetConfig(label, data, color, gradient, options = {}, points = []) {
         const hoverColor = hexToRgba(color, color === CHART_COLORS.total ? 0.8 : 0.5)
+        const pointColors = data.map((_, index) => points[index]?.partial ? '#FBBF24' : color)
 
         return {
             label,
@@ -556,16 +565,22 @@ export class StatsView {
             borderWidth: options.borderWidth || 2,
             fill: true,
             tension: 0.4,
-            pointRadius: data.length === 1 ? 4 : 0,
+            spanGaps: false,
+            segment: {
+                borderDash: context => points[context.p0DataIndex]?.partial || points[context.p1DataIndex]?.partial ? [6, 4] : [],
+            },
+            pointRadius: data.map((_, index) => points[index]?.partial || data.length === 1 ? 4 : 0),
+            pointBackgroundColor: pointColors,
+            pointBorderColor: pointColors,
             pointHoverRadius: options.borderWidth === 3 ? 6 : 5,
-            pointHoverBackgroundColor: color,
+            pointHoverBackgroundColor: pointColors,
             pointHoverBorderColor: hoverColor,
             pointHoverBorderWidth: 2,
             hidden: options.hidden ?? false,
         }
     }
 
-    _getChartOptions() {
+    _getChartOptions(points) {
         return {
             responsive: true,
             maintainAspectRatio: false,
@@ -579,7 +594,7 @@ export class StatsView {
             },
             plugins: {
                 legend: this._getLegendConfig(),
-                tooltip: this._getTooltipConfig(),
+                tooltip: this._getTooltipConfig(points),
             },
             scales: {
                 x: {
@@ -619,6 +634,11 @@ export class StatsView {
                 pointStyle: 'circle',
                 boxWidth: 8,
                 boxHeight: 8,
+                generateLabels: chart => Chart.defaults.plugins.legend.labels.generateLabels(chart).map(item => ({
+                    ...item,
+                    fillStyle: chart.data.datasets[item.datasetIndex].borderColor,
+                    strokeStyle: chart.data.datasets[item.datasetIndex].borderColor,
+                })),
             },
             onClick: (e, legendItem, legend) => {
                 const chart = legend.chart
@@ -656,7 +676,7 @@ export class StatsView {
         }
     }
 
-    _getTooltipConfig() {
+    _getTooltipConfig(points = []) {
         return {
             enabled: true,
             backgroundColor: 'rgba(15, 23, 42, 0.95)',
@@ -674,6 +694,27 @@ export class StatsView {
             callbacks: {
                 title: (items) => items.length ? `📅 ${items[0].label}` : '',
                 label: (context) => ` ${context.dataset.label}: ${formatMoney(context.parsed.y)}`,
+                afterBody: (items) => {
+                    const point = points[items[0]?.dataIndex]
+                    if (!point || (!point.partial && !point.unpublishedGames?.length)) return []
+                    const missing = point.missingGames
+                    const lines = [
+                        `Доход указан у ${point.gamesCount - missing.length} из ${point.gamesCount} игр`,
+                    ]
+                    if (missing.length) lines.push(
+                        'Без значения дохода:',
+                        ...missing.slice(0, 3).map(name => name.length > 48 ? `${name.slice(0, 47)}…` : name),
+                        ...(missing.length > 3 ? [`И ещё ${missing.length - 3}`] : []),
+                        'Причина отсутствия значения не указана.',
+                    )
+                    const unpublished = point.unpublishedGames || []
+                    if (unpublished.length) lines.push(
+                        'До публикации (не пропуски):',
+                        ...unpublished.slice(0, 3).map(name => name.length > 48 ? `${name.slice(0, 47)}…` : name),
+                        ...(unpublished.length > 3 ? [`И ещё ${unpublished.length - 3}`] : []),
+                    )
+                    return lines
+                },
                 labelTextColor: () => 'rgba(248, 250, 252, 0.9)',
             },
         }

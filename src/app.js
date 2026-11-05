@@ -17,6 +17,7 @@ import {
     sortGamesTableData,
     extractUniqueTimestamps,
     prepareChartData,
+    reportDay,
 } from './utils/helpers.js'
 
 export class App {
@@ -311,15 +312,16 @@ export class App {
         } else if (this.activeTab === 'chart') {
             this.updateChartForPeriod('day', { start: timestamp, end: timestamp })
         } else {
-            const aggregated = aggregateRevenueData(this.rawData.allGamesData, timestamp)
-            const players = aggregatePlayersData(this.rawData.allPlayersData, timestamp)
+            const aggregated = aggregateRevenueData(this.rawData.allGamesData, timestamp, this.rawData.gamesInfo)
+            const players = aggregatePlayersData(this.rawData.allPlayersData, timestamp, this.rawData.gamesInfo)
 
             const dateData = {
                 date: new Date(timestamp),
                 amount: aggregated.total,
+                partial: aggregated.partial,
                 advertising: aggregated.advertising,
                 inApp: aggregated.inApp,
-                gamesCount: this.rawData.gamesInfo.length,
+                gamesCount: aggregated.gamesCount,
                 players: players,
             }
 
@@ -354,11 +356,20 @@ export class App {
         if (this.updatedAt) messages.push(`Обновлено в ${new Date(this.updatedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`)
         const errors = this.rawData.errors || []
         if (errors.length) messages.push(`Данные неполные. Не загружено метрик: ${errors.length}. Итог учитывает только загруженные доходы.`, ...errors)
+        const unknownPublicationDates = this.rawData.gamesInfo.filter(game => !Number.isFinite(game.publishedAt)).length
+        if (unknownPublicationDates) messages.push(`Дата публикации неизвестна у ${unknownPublicationDates} игр: для них дни до выхода пока не исключены из проверки пропусков.`)
         if (this.rawData.periodErrors?.[period]) messages.push(`Не удалось получить итог периода: ${this.rawData.periodErrors[period]}. Показана сумма дневных значений графика; возможна разница округления.`)
+        const rows = prepareGamesTableData(this.rawData.allGamesData, this.rawData.gamesInfo, range.start, range.end,
+            period, this.rawData.allPlayersData, period === 'day' ? null : this.rawData.periodRevenues?.[period])
+        const partialRevenue = this.activeTab === 'chart'
+            ? prepareChartData(this.rawData.allGamesData, range.start, range.end, this.rawData.gamesInfo).points.some(point => point.partial)
+            : rows.some(row => row.totalRevenue === null && !row.beforePublication)
+        if (partialRevenue) messages.push('У части игр нет значения дохода за выбранные дни. Это не обязательно сбой: показана сумма доступных значений.')
+        if (this.activeTab !== 'chart' && rows.some(row => row.players === null && !row.beforePublication)) messages.push('Данные игроков доступны не за все выбранные дни или игры. Неизвестные значения показаны прочерком.')
         const lastTimestamp = this.rawData.lastTimestamp
         if (lastTimestamp) messages.push(`Последний день с данными графиков: ${formatDate(new Date(lastTimestamp))}`)
-        if (!lastTimestamp || range.start > lastTimestamp) messages.push('Данные графиков за выбранный период ещё не доступны. Отсутствующие значения показаны прочерком.')
-        else if (range.end >= lastTimestamp + 86400000) messages.push('Выбранный период включает дни, за которые графики пока не содержат данных.')
+        if (!lastTimestamp || reportDay(range.start) > reportDay(lastTimestamp)) messages.push('Данные графиков за выбранный период ещё не доступны. Отсутствующие значения показаны прочерком.')
+        else if (reportDay(range.end) > reportDay(lastTimestamp)) messages.push('Выбранный период включает дни, за которые графики пока не содержат данных.')
         this.view.setNotice(messages.join('\n'))
     }
 
@@ -445,10 +456,11 @@ export class App {
         return {
             date: new Date(periodEnd),
             amount: sum('totalRevenue'),
+            partial: rows.some(row => row.totalRevenue === null && !row.beforePublication),
             advertising: sum('advertising'),
             inApp: sum('inApp'),
-            gamesCount: rawData.gamesInfo.length,
-            players: rows.some(row => row.players === null) ? null : sum('players'),
+            gamesCount: rows.filter(row => !row.beforePublication || row.totalRevenue !== null).length,
+            players: rows.some(row => row.players === null && !row.beforePublication) ? null : sum('players'),
         }
     }
 
@@ -514,6 +526,11 @@ export class App {
             }
 
             const allGamesData = []
+            const publicationDates = ApiService.fetchPublicationDates(gamesInfo.map(game => game.id))
+                .then(dates => {
+                    for (const game of gamesInfo) game.publishedAt = dates[game.id] ?? null
+                })
+                .catch(error => Logger.warn('Publication dates unavailable:', error.message))
             const allPlayersData = []
             const errors = []
             const dateRange = ApiService.getAnalyticsDateRange(today)
@@ -543,19 +560,22 @@ export class App {
                 }
             }
 
+            await publicationDates
+            if (!current()) return
             const lastTimestamp = findLatestTimestamp(allGamesData)
 
-            const aggregated = aggregateRevenueData(allGamesData, lastTimestamp)
-            const totalPlayers = aggregatePlayersData(allPlayersData, lastTimestamp)
+            const aggregated = aggregateRevenueData(allGamesData, lastTimestamp, gamesInfo)
+            const totalPlayers = aggregatePlayersData(allPlayersData, lastTimestamp, gamesInfo)
 
             const lastDate = lastTimestamp ? new Date(lastTimestamp) : today
 
             const lastDayData = {
                 date: lastDate,
                 amount: aggregated.total,
+                partial: aggregated.partial,
                 advertising: aggregated.advertising,
                 inApp: aggregated.inApp,
-                gamesCount: gamesInfo.length,
+                gamesCount: aggregated.gamesCount,
                 players: totalPlayers,
             }
 
@@ -693,6 +713,7 @@ export class App {
             this.rawData.allGamesData,
             periodStart,
             periodEnd,
+            this.rawData.gamesInfo,
         )
 
         this.view.showChart(chartData, period)

@@ -84,6 +84,22 @@ function fetchWithTimeout(url, options = {}, timeout = FETCH_TIMEOUT) {
 }
 
 export class ApiService {
+    static async fetchPublicationDates(gameIds) {
+        return new Promise((resolve, reject) => {
+            const runtime = globalThis.chrome?.runtime
+            if (!runtime?.sendMessage) {
+                reject(new Error('Перезагрузите расширение для получения дат публикации'))
+                return
+            }
+            runtime.sendMessage({ type: 'getPublicationDates', gameIds: gameIds.map(Number) }, response => {
+                if (runtime.lastError) reject(new Error(runtime.lastError.message))
+                else if (response?.error) reject(new Error(response.error))
+                else if (!response?.dates || typeof response.dates !== 'object') reject(new Error('Не удалось получить даты публикации'))
+                else resolve(response.dates)
+            })
+        })
+    }
+
     static getRelationContext() {
         const context = Number(new URLSearchParams(window.location.hash.slice(1)).get('relation_context'))
         // The console briefly puts -1 in the URL while resolving the active account.

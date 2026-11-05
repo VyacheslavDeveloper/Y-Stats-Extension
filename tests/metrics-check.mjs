@@ -1,4 +1,5 @@
 // Run: node --experimental-default-type=module tests/metrics-check.mjs
+import './daily-metrics-check.mjs'
 import assert from 'node:assert/strict'
 import { mock } from 'node:test'
 import { ApiService, normalizeAnalyticsData, normalizeRevenueTotals } from '../src/services/api.service.js'
@@ -34,7 +35,7 @@ assert.equal(aggregateRevenueData([null, null], day).total, null)
 assert.equal(prepareChartData(data, day, day).points[0].total, 17.75)
 const sparse = { options: { series: [{ id: 'Реклама', data: [{ x: day - 86400000, y: 1 }] }] } }
 assert.equal(prepareChartData([...data, sparse], day, day).points[0].total, 17.75)
-assert.equal(prepareGamesTableData([...data, sparse], [...games, { id: 3 }], day, day, 'day')[2].totalRevenue, 0)
+assert.equal(prepareGamesTableData([...data, sparse], [...games, { id: 3 }], day, day, 'day')[2].totalRevenue, null)
 assert.equal(prepareGamesTableData(data, games, day + 86400000, day + 86400000, 'day')[0].totalRevenue, null)
 assert.equal(prepareGamesTableData([null], games, day, day, 'day', [players(100)])[0].players, 100)
 assert.equal(formatMoney(null), '—')
@@ -56,7 +57,11 @@ assert.equal(normalizeRevenueTotals({ items: [{ game_id: 1, earn: null }] })[1].
 assert.throws(() => normalizeRevenueTotals({ currency: 'USD', items: [] }))
 
 // Verify the actual request contract, then the loading path with one failed players request.
-const originalGlobals = { window: globalThis.window, document: globalThis.document }
+const originalGlobals = { window: globalThis.window, document: globalThis.document, chrome: globalThis.chrome }
+globalThis.chrome = { runtime: { sendMessage(message, callback) {
+    assert.deepEqual(message, { type: 'getPublicationDates', gameIds: [101, 202] })
+    queueMicrotask(() => callback({ dates: { 101: day - 86400000, 202: day } }))
+} } }
 globalThis.window = { location: { hash: '#relation_context=12345' } }
 assert.equal(ApiService.getRelationContext(), '12345')
 window.location.hash = '#relation_context=-1'
@@ -134,6 +139,9 @@ try {
         },
     })
     await app.loadData()
+    assert.equal(app.rawData.gamesInfo[0].publishedAt, day - 86400000)
+    assert.equal(app.rawData.gamesInfo[1].publishedAt, day)
+    assert.doesNotMatch(app.view.notice, /Дата публикации неизвестна/)
     assert.equal(app.rawData.allGamesData[0].options.series[0].data[0].y, 10.25)
     assert.equal(app.rawData.allPlayersData[0], null)
     assert.equal(app.view.result.amount, 17.75)
@@ -154,6 +162,10 @@ try {
     assert.equal(app.aggregateDataForPeriod(app.rawData, 'month_prev').amount, 17.75)
     app.updateNotice(app.getPeriodRange(app.rawData, 'month_prev'), 'month_prev')
     assert.match(app.view.notice, /разница округления/)
+    chrome.runtime.sendMessage = (_message, callback) => queueMicrotask(() => callback({ error: 'Catalogue unavailable' }))
+    await app.loadData()
+    assert.equal(app.view.result.amount, 17.75, 'Publication lookup failure must not erase income')
+    assert.match(app.view.notice, /Дата публикации неизвестна у 2 игр/)
     console.log('Metrics check passed: current API, exact period totals, daily income, partial failures, dates.')
 } finally {
     globalThis.fetch = originalFetch
