@@ -57,8 +57,9 @@ window.fetch = async url => {
         nextResponse = null
         return response
     }
-    if (location.hash.includes('relation_context=123')) {
-        assert(new URL(url).searchParams.get('relation_context') === '123', 'Wrong account in the list request')
+    const selected = new URLSearchParams(location.hash.slice(1)).get('relation_context')
+    if (selected) {
+        assert(new URL(url).searchParams.get('relation_context') === selected, 'Wrong account in the list request')
     }
     if (failNextRequest) {
         failNextRequest = false
@@ -133,6 +134,12 @@ try {
     history.replaceState(null, '', '#relation_context=123')
     await waitFor(() => listRequests === before + 1 && document.querySelector('[data-stats="notice"]')?.textContent.includes('Нет опубликованных игр'), 'First click did not resume automatically')
     result.textContent += '\nPASS: one early click resumes for the resolved account'
+
+    history.replaceState(null, '', '#relation_context=-1')
+    await pause(150)
+    await checkButton('one click loads the default profile when its context stays at -1')
+    history.replaceState(null, '', '#relation_context=123')
+    await pause(150)
 
     nextResponse = new Promise(resolve => { deferResponse = resolve })
     document.querySelector('[data-stats="load-button"]').click()

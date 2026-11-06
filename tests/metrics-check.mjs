@@ -65,7 +65,7 @@ globalThis.chrome = { runtime: { sendMessage(message, callback) {
 globalThis.window = { location: { hash: '#relation_context=12345' } }
 assert.equal(ApiService.getRelationContext(), '12345')
 window.location.hash = '#relation_context=-1'
-assert.equal(ApiService.getRelationContext(), null)
+assert.equal(ApiService.getRelationContext(), '-1')
 window.location.hash = '#relation_context=12345'
 globalThis.document = { querySelector: () => null, querySelectorAll: () => [] }
 const originalFetch = globalThis.fetch
@@ -101,6 +101,7 @@ try {
         const parsed = new URL(url)
         assert.equal(options.credentials, 'include')
         if (parsed.pathname === '/console/api/applications') {
+            assert.equal(parsed.searchParams.get('relation_context'), new URLSearchParams(window.location.hash.slice(1)).get('relation_context'))
             return { ok: true, json: async () => games.map(game => ({
                 rtx_id: game.id, 'published-version': { title: { ru: game.name } },
             })) }
@@ -116,6 +117,7 @@ try {
             return { ok: true, json: async () => rawRevenue(id === 101 ? 10.25 : 7.50) }
         }
         assert.equal(parsed.pathname, '/console/api/metrics-engine/total/data')
+        assert.equal(parsed.searchParams.get('relation_context'), new URLSearchParams(window.location.hash.slice(1)).get('relation_context'))
         const range = parsed.searchParams.getAll('date_range')
         requestedPeriods.push(range)
         const includesRecordedDay = range[0] <= '2026-09-29' && range[1] >= '2026-09-29'
@@ -163,7 +165,8 @@ try {
     app.updateNotice(app.getPeriodRange(app.rawData, 'month_prev'), 'month_prev')
     assert.match(app.view.notice, /разница округления/)
     chrome.runtime.sendMessage = (_message, callback) => queueMicrotask(() => callback({ error: 'Catalogue unavailable' }))
-    await app.loadData()
+    window.location.hash = '#relation_context=-1'
+    await app.loadData(true)
     assert.equal(app.view.result.amount, 17.75, 'Publication lookup failure must not erase income')
     assert.match(app.view.notice, /Дата публикации неизвестна у 2 игр/)
     console.log('Metrics check passed: current API, exact period totals, daily income, partial failures, dates.')

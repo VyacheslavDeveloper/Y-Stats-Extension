@@ -30,7 +30,7 @@ function isSnapshot(data) {
 export class StatsCache {
     async read(context) {
         const storage = globalThis.chrome?.storage?.local
-        if (!context || !storage) return null
+        if (!context || context === '-1' || !storage) return null
         const key = CACHE_PREFIX + context
         try {
             const value = (await storageCall(storage, 'get', key))[key]
@@ -51,7 +51,7 @@ export class StatsCache {
 
     async write(context, data, updatedAt) {
         const storage = globalThis.chrome?.storage?.local
-        if (!context || !storage || !isSnapshot(data)) return
+        if (!context || context === '-1' || !storage || !isSnapshot(data)) return
         await this.removeExpired(storage, context)
         try {
             await storageCall(storage, 'set', { [CACHE_PREFIX + context]: { context, updatedAt, data } })
@@ -76,7 +76,7 @@ export class StatsCache {
 
     async clear(context) {
         const storage = globalThis.chrome?.storage?.local
-        if (!context || !storage) return
+        if (!context || context === '-1' || !storage) return
         try { await storageCall(storage, 'remove', CACHE_PREFIX + context) }
         catch (error) { Logger.warn('Statistics cache removal failed:', error.message) }
     }
