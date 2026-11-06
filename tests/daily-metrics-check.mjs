@@ -140,8 +140,38 @@ test('period coverage starts on publication day, preserving actual pre-release a
     assert.equal(row.totalRevenue, 12)
     assert.equal(row.players, 12)
     const gap = [revenue([[day - dayMs, null], [day, null], [day + dayMs, 7]])]
-    assert.equal(prepareGamesTableData(gap, info, day - dayMs, day + dayMs, 'week', counts)[0].totalRevenue, null)
+    const partial = prepareGamesTableData(gap, info, day - dayMs, day + dayMs, 'week', counts)[0]
+    assert.equal(partial.totalRevenue, 7)
+    assert.equal(partial.partial, true)
+    assert.equal(partial.revenuePerPlayer, null)
     assert.equal(prepareGamesTableData(data, info, day - dayMs, day + dayMs, 'week', [players([[day + dayMs, 4]])])[0].players, null)
+})
+
+test('a fallback period keeps known money and marks gaps, while exact totals take precedence', () => {
+    const start = day
+    const end = day + 2 * dayMs
+    const raw = { lastTimestamp: end, loadedAt: end, dateRange: ['2026-09-30', '2026-10-02'],
+        gamesInfo: [games[0]], allPlayersData: [null], periodErrors: { 'all-time': '503' } }
+    const app = Object.create(App.prototype)
+    const overview = points => {
+        raw.allGamesData = [revenue(points)]
+        return app.aggregateDataForPeriod(raw, 'all-time')
+    }
+    for (const middle of [[], [[day + dayMs, null]]]) {
+        const result = overview([[start, 10], ...middle, [end + 9 * 3600000, 20]])
+        assert.equal(result.amount, 30)
+        assert.equal(result.partial, true)
+    }
+    assert.equal(overview([[start, 10], [day + dayMs, 0], [end, 20]]).partial, false)
+    assert.equal(overview([[day + dayMs, 0], [end, 0]]).partial, true, 'Missing first day counts')
+    raw.gamesInfo = [{ ...games[0], publishedAt: day + dayMs }]
+    const sinceRelease = overview([[day + dayMs, 0], [end, 0]])
+    assert.equal(sinceRelease.amount, 0)
+    assert.equal(sinceRelease.partial, false)
+    raw.periodRevenues = { 'all-time': { 101: { totalRevenue: 35, advertising: 35, inApp: 0 } } }
+    const exact = overview([[end, 20]])
+    assert.equal(exact.amount, 35)
+    assert.equal(exact.partial, false)
 })
 
 test('player-day periods with missing days remain unknown and complete periods include 09:00 points', () => {

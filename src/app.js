@@ -362,7 +362,7 @@ export class App {
             period, this.rawData.allPlayersData, period === 'day' ? null : this.rawData.periodRevenues?.[period])
         const partialRevenue = this.activeTab === 'chart'
             ? prepareChartData(this.rawData.allGamesData, range.start, range.end, this.rawData.gamesInfo).points.some(point => point.partial)
-            : rows.some(row => row.totalRevenue === null && !row.beforePublication)
+            : rows.some(row => row.partial)
         if (partialRevenue) messages.push('У части игр нет значения дохода за выбранные дни. Это не обязательно сбой: показана сумма доступных значений.')
         const partialPlayers = this.activeTab !== 'chart' && rows.some(row => row.players === null && !row.beforePublication)
         if (partialPlayers) messages.push('Данные игроков доступны не за все выбранные дни или игры. Неизвестные значения показаны прочерком.')
@@ -460,7 +460,7 @@ export class App {
         return {
             date: new Date(periodEnd),
             amount: sum('totalRevenue'),
-            partial: rows.some(row => row.totalRevenue === null && !row.beforePublication),
+            partial: rows.some(row => row.partial),
             advertising: sum('advertising'),
             inApp: sum('inApp'),
             gamesCount: rows.filter(row => !row.beforePublication || row.totalRevenue !== null).length,

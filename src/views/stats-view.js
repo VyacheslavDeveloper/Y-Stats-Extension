@@ -508,10 +508,13 @@ export class StatsView {
         const row = document.createElement('tr')
         if (game.beforePublication && game.totalRevenue === null) row.setAttribute('title', 'В выбранном периоде игра ещё не опубликована')
 
+        const partialAmount = game.partial && game.totalRevenue !== null
+        if (partialAmount) row.title = 'Сумма по доступным дням'
+
         const cells = [
             { className: 'game-name', label: 'Название', value: game.name || 'Неизвестная игра' },
             { className: 'game-id', label: 'ID игры', value: game.id || '-' },
-            { className: 'revenue-cell', label: 'Общий доход', value: formatMoney(game.totalRevenue) },
+            { className: 'revenue-cell', label: 'Общий доход', value: formatMoney(game.totalRevenue) + (partialAmount ? ' *' : '') },
             { className: 'revenue-cell', label: 'Реклама', value: formatMoney(game.advertising) },
             { className: 'revenue-cell', label: 'In-app', value: formatMoney(game.inApp) },
             { className: 'players-cell', label: period === 'day' ? 'Игроки' : 'Игроки, сумма по дням', value: game.players === null ? '—' : (game.players || 0).toLocaleString('ru-RU') },

@@ -209,7 +209,9 @@ export function prepareGamesTableData(allGamesData, gamesInfo, periodStart, peri
             }
         }
 
-        const revenuePerPlayer = players === null || totalRevenue === null ? null : calculateRevenuePerPlayer(totalRevenue, players)
+        const beforePublication = isBeforePublication(periodEnd, gameInfo.publishedAt)
+        const partial = revenue.partial === true || (totalRevenue === null && !beforePublication)
+        const revenuePerPlayer = partial || players === null || totalRevenue === null ? null : calculateRevenuePerPlayer(totalRevenue, players)
 
         return {
             id: gameInfo.id,
@@ -218,8 +220,9 @@ export function prepareGamesTableData(allGamesData, gamesInfo, periodStart, peri
             totalRevenue,
             players,
             revenuePerPlayer,
-            beforePublication: isBeforePublication(periodEnd, gameInfo.publishedAt),
+            beforePublication,
             ...revenue,
+            partial,
         }
     })
 }
@@ -242,22 +245,20 @@ function extractDayRevenue(series, timestamp) {
 function extractPeriodRevenue(series, periodStart, periodEnd, publishedAt) {
     let advertising = 0
     let inApp = 0
-
-    for (const serie of series) {
-        if (!serie.data?.length) return { advertising: null, inApp: null }
-
-        const serieId = serie.id || ''
-        const value = sumPointsInPeriod(serie.data, periodStart, periodEnd, publishedAt)
-        if (value === null) return { advertising: null, inApp: null }
-
-        if (REVENUE_SERIES_IDS.ADVERTISING.includes(serieId)) {
-            advertising += value
-        } else if (REVENUE_SERIES_IDS.IN_APP.includes(serieId)) {
-            inApp += value
+    let loaded = false
+    let partial = false
+    for (let day = reportDay(periodStart); day <= reportDay(periodEnd); day++) {
+        const timestamp = day * 86400000
+        const amounts = extractDayRevenue(series, timestamp)
+        if (amounts.advertising === null || amounts.inApp === null) {
+            if (!isBeforePublication(timestamp, publishedAt)) partial = true
+            continue
         }
+        loaded = true
+        advertising += amounts.advertising
+        inApp += amounts.inApp
     }
-
-    return { advertising, inApp }
+    return { advertising: loaded ? advertising : null, inApp: loaded ? inApp : null, partial }
 }
 
 function sumPointsInPeriod(data, periodStart, periodEnd, publishedAt) {
