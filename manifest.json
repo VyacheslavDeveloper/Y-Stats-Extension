@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "Y-Stats-Extension (Unofficial)",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "description": "Неофициальное расширение для разработчиков Яндекс Игр. Показывает расширенную статистику",
     "author": "VyacheslavDeveloper",
 
@@ -34,8 +34,13 @@
         }
     ],
     "host_permissions": [
+        "https://yandex.ru/*",
         "https://games.yandex.ru/*",
         "https://raw.githubusercontent.com/*"
     ],
-    "permissions": ["storage"]
+    "permissions": ["storage"],
+    "background": {
+        "service_worker": "background.js",
+        "type": "module"
+    }
 }

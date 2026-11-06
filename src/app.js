@@ -2,8 +2,9 @@ import { StatsView } from './views/stats-view.js'
 import { ApiService } from './services/api.service.js'
 import { DomService } from './services/dom.service.js'
 import { VersionService } from './services/version.service.js'
+import { StatsCache } from './services/stats-cache.service.js'
 import { Logger } from './services/logger.service.js'
-import { TIMINGS, API, DATA_ATTRIBUTES, CHART } from './config/constants.js'
+import { API, DATA_ATTRIBUTES, CHART } from './config/constants.js'
 import { formatDate } from './utils/formatters.js'
 import { normalizeRequestDelay } from './utils/validators.js'
 import {
@@ -16,16 +17,19 @@ import {
     sortGamesTableData,
     extractUniqueTimestamps,
     prepareChartData,
+    reportDay,
 } from './utils/helpers.js'
 
 export class App {
     constructor() {
         this.view = new StatsView()
         this.domService = new DomService(this.view)
+        this.cache = new StatsCache()
         this.rawData = null
         this.selectedPeriod = 'month_current'
         this.csrfToken = null
-        this.isLoading = false
+        this.loadingWidget = null
+        this.pendingLoad = false
         this.settings = {
             enabled: true,
             requestDelay: API.REQUEST_DELAY,
@@ -48,21 +52,14 @@ export class App {
             return
         }
 
-        const token = await ApiService.fetchAndParseCsrfToken()
-        if (token) {
-            this.csrfToken = token
-            Logger.info('CSRF token received')
-        } else {
-            Logger.warn('Failed to get CSRF token')
-        }
-
         this.domService.startUrlMonitoring((newUrl) => {
             this.handleUrlChange(newUrl)
         })
 
-        this.domService.tryInsert(() => {
-            this.onBlockInserted()
-        })
+        this.domService.setInsertCallback(() => this.onBlockInserted())
+        this.domService.startObserver()
+        this.domService.startPeriodicCheck()
+        this.domService.tryInsert()
     }
 
     async loadSettings() {
@@ -118,34 +115,87 @@ export class App {
 
     handleUrlChange(newUrl) {
         if (isApplicationsPage(newUrl)) {
-            if (!this.view.isInDOM()) {
-                this.domService.tryInsert(() => {
-                    this.onBlockInserted()
-                })
-            }
+            const context = ApiService.getRelationContext()
+            if (this.view.isInDOM() && this.widgetContext !== context) this.domService.removeBlock()
+            if (!this.view.isInDOM()) this.domService.tryInsert()
+            else if (this.pendingLoad && context) this.loadData()
         } else {
+            clearTimeout(this.cacheTimer)
+            this.pendingLoad = false
+            this.loadingWidget = null
             this.domService.removeBlock()
         }
     }
 
     onBlockInserted() {
+        clearTimeout(this.cacheTimer)
+        this.loadingWidget = null
+        this.rawData = null
+        this.updatedAt = null
+        this.availableDates = []
+        this.selectedDate = null
+        this.dateSelectionMode = 'period'
+        this.widgetContext = ApiService.getRelationContext()
         if (!this.versionChecked) {
             this.versionChecked = true
             this.renderVersionInfo()
-        }
+        } else if (this.versionInfo) this.view.showVersionInfo(this.versionInfo)
 
         this.setupLoadButton()
 
-        setTimeout(() => {
-            this.domService.startObserver()
-            this.domService.startPeriodicCheck()
-        }, TIMINGS.OBSERVER_START_DELAY)
+        const widget = this.view.element
+        const context = this.widgetContext
+        this.cacheLookup = context ? widget : null
+        if (context) this.restoreCache(widget, context)
+        else if (this.pendingLoad) this.loadData()
+    }
+
+    async restoreCache(widget, context) {
+        const cached = await this.cache.read(context)
+        const current = () => this.view.element === widget && this.view.isInDOM() && ApiService.getRelationContext() === context
+        if (!current()) return
+        this.cacheLookup = null
+        if (!cached) {
+            if (this.pendingLoad) this.loadData()
+            return
+        }
+
+        this.pendingLoad = false
+        const expire = () => {
+            if (!current()) return
+            this.view.setNotice('')
+            this.view.showButton()
+            this.setupLoadButton()
+        }
+        this.view.setNotice(`Сохранено в ${new Date(cached.updatedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`)
+        this.view.showCachedActions(() => {
+            if (!current()) return
+            clearTimeout(this.cacheTimer)
+            if (Date.now() >= cached.expiresAt || Date.now() < cached.updatedAt) return expire()
+            this.displaySnapshot(cached.data, cached.updatedAt)
+        }, () => { if (current()) this.loadData() })
+        this.cacheTimer = setTimeout(expire, Math.max(0, cached.expiresAt - Date.now()))
+    }
+
+    displaySnapshot(snapshot, updatedAt) {
+        this.rawData = snapshot
+        this.updatedAt = updatedAt
+        this.availableDates = extractUniqueTimestamps(snapshot.allGamesData).map(timestamp => ({
+            timestamp, label: formatDate(new Date(timestamp)),
+        }))
+        const refresh = this.view.element.querySelector('[data-stats="refresh"]')
+        if (refresh) {
+            refresh.hidden = false
+            refresh.onclick = () => this.loadData()
+        }
+        if (this.dateSelectionMode === 'specific-date' && this.selectedDate) this.updateDataForSpecificDate(this.selectedDate)
+        else this.updateDataForPeriod(this.selectedPeriod)
     }
 
     setupLoadButton() {
         const button = document.querySelector(`[data-stats="${DATA_ATTRIBUTES.LOAD_BUTTON}"]`)
         if (button) {
-            button.addEventListener('click', () => this.loadData())
+            button.onclick = () => this.loadData()
         }
     }
 
@@ -262,15 +312,16 @@ export class App {
         } else if (this.activeTab === 'chart') {
             this.updateChartForPeriod('day', { start: timestamp, end: timestamp })
         } else {
-            const aggregated = aggregateRevenueData(this.rawData.allGamesData, timestamp)
-            const players = aggregatePlayersData(this.rawData.allPlayersData, timestamp)
+            const aggregated = aggregateRevenueData(this.rawData.allGamesData, timestamp, this.rawData.gamesInfo)
+            const players = aggregatePlayersData(this.rawData.allPlayersData, timestamp, this.rawData.gamesInfo)
 
             const dateData = {
                 date: new Date(timestamp),
                 amount: aggregated.total,
+                partial: aggregated.partial,
                 advertising: aggregated.advertising,
                 inApp: aggregated.inApp,
-                gamesCount: this.rawData.gamesInfo.length,
+                gamesCount: aggregated.gamesCount,
                 players: players,
             }
 
@@ -304,12 +355,26 @@ export class App {
         const messages = []
         const errors = this.rawData.errors || []
         if (errors.length) messages.push(`Данные неполные. Не загружено метрик: ${errors.length}. Итог учитывает только загруженные доходы.`, ...errors)
+        const unknownPublicationDates = this.rawData.gamesInfo.filter(game => !Number.isFinite(game.publishedAt)).length
+        if (unknownPublicationDates) messages.push(`Дата публикации неизвестна у ${unknownPublicationDates} игр: для них дни до выхода пока не исключены из проверки пропусков.`)
         if (this.rawData.periodErrors?.[period]) messages.push(`Не удалось получить итог периода: ${this.rawData.periodErrors[period]}. Показана сумма дневных значений графика; возможна разница округления.`)
+        const rows = prepareGamesTableData(this.rawData.allGamesData, this.rawData.gamesInfo, range.start, range.end,
+            period, this.rawData.allPlayersData, period === 'day' ? null : this.rawData.periodRevenues?.[period])
+        const partialRevenue = this.activeTab === 'chart'
+            ? prepareChartData(this.rawData.allGamesData, range.start, range.end, this.rawData.gamesInfo).points.some(point => point.partial)
+            : rows.some(row => row.partial)
+        if (partialRevenue) messages.push('У части игр нет значения дохода за выбранные дни. Это не обязательно сбой: показана сумма доступных значений.')
+        const partialPlayers = this.activeTab !== 'chart' && rows.some(row => row.players === null && !row.beforePublication)
+        if (partialPlayers) messages.push('Данные игроков доступны не за все выбранные дни или игры. Неизвестные значения показаны прочерком.')
         const lastTimestamp = this.rawData.lastTimestamp
-        if (lastTimestamp) messages.push(`Последний день с данными графиков: ${formatDate(new Date(lastTimestamp))}`)
-        if (!lastTimestamp || range.start > lastTimestamp) messages.push('Данные графиков за выбранный период ещё не доступны. Отсутствующие значения показаны прочерком.')
-        else if (range.end >= lastTimestamp + 86400000) messages.push('Выбранный период включает дни, за которые графики пока не содержат данных.')
-        this.view.setNotice(messages.join('\n'))
+        if (!lastTimestamp || reportDay(range.start) > reportDay(lastTimestamp)) messages.push('Данные графиков за выбранный период ещё не доступны. Отсутствующие значения показаны прочерком.')
+        else if (reportDay(range.end) > reportDay(lastTimestamp)) messages.push('Выбранный период включает дни, за которые графики пока не содержат данных.')
+        let summary = 'Даты публикации'
+        if (errors.length || this.rawData.periodErrors?.[period]) summary = 'Ошибка загрузки'
+        else if (!lastTimestamp || reportDay(range.start) > reportDay(lastTimestamp)) summary = 'Графики пока недоступны'
+        else if (reportDay(range.end) > reportDay(lastTimestamp)) summary = 'Есть дни без данных'
+        else if (partialRevenue || partialPlayers) summary = 'Есть пропуски'
+        this.view.setNotice(messages.join('\n'), { updatedAt: this.updatedAt, lastTimestamp, summary })
     }
 
     getPeriodRange(rawData, period) {
@@ -395,16 +460,18 @@ export class App {
         return {
             date: new Date(periodEnd),
             amount: sum('totalRevenue'),
+            partial: rows.some(row => row.partial),
             advertising: sum('advertising'),
             inApp: sum('inApp'),
-            gamesCount: rawData.gamesInfo.length,
-            players: rows.some(row => row.players === null) ? null : sum('players'),
+            gamesCount: rows.filter(row => !row.beforePublication || row.totalRevenue !== null).length,
+            players: rows.some(row => row.players === null && !row.beforePublication) ? null : sum('players'),
         }
     }
 
     async renderVersionInfo() {
         try {
             const info = await VersionService.checkVersion()
+            this.versionInfo = info
             this.view.showVersionInfo(info)
         } catch (error) {
             Logger.warn('Version info render skipped:', error.message)
@@ -412,27 +479,31 @@ export class App {
     }
 
     async loadData() {
-        if (this.isLoading) {
-            Logger.info('Loading is already in progress')
+        const widget = this.view.element
+        if (this.loadingWidget === widget) return
+        const context = ApiService.getRelationContext()
+        if (this.cacheLookup === widget) {
+            this.pendingLoad = true
+            return
+        }
+        if (!context && (this.pendingLoad || new URLSearchParams(window.location.hash.slice(1)).get('relation_context') === '-1')) {
+            this.pendingLoad = true
+            this.view.setNotice('Кабинет определяет аккаунт. Загрузка начнётся автоматически после выбора аккаунта.')
             return
         }
 
-        this.isLoading = true
-        const button = document.querySelector(`[data-stats="${DATA_ATTRIBUTES.LOAD_BUTTON}"]`)
-        
-        if (button) {
-            button.disabled = true
-            button.style.opacity = '0.5'
-            button.style.cursor = 'not-allowed'
-        }
-
+        clearTimeout(this.cacheTimer)
+        this.pendingLoad = false
+        this.widgetContext = context
+        this.loadingWidget = widget
+        const current = () => this.loadingWidget === widget && this.view.element === widget && ApiService.getRelationContext() === context
         try {
             this.view.setNotice('')
             this.view.showInitialLoading()
 
             if (!this.csrfToken) {
-                Logger.error('CSRF token is missing')
                 const token = await ApiService.fetchAndParseCsrfToken()
+                if (!current()) return
                 if (token) {
                     this.csrfToken = token
                 } else {
@@ -443,8 +514,15 @@ export class App {
             const today = new Date()
 
             const gamesInfo = await ApiService.fetchGamesList()
+            if (!current()) return
 
             if (!gamesInfo || gamesInfo.length === 0) {
+                await this.cache?.clear(context)
+                if (!current()) return
+                this.rawData = null
+                this.updatedAt = null
+                const refresh = widget.querySelector('[data-stats="refresh"]')
+                if (refresh) refresh.hidden = true
                 this.view.showButton()
                 this.view.setNotice('Нет опубликованных игр в выбранном аккаунте.')
                 this.setupLoadButton()
@@ -452,17 +530,24 @@ export class App {
             }
 
             const allGamesData = []
+            const publicationDates = ApiService.fetchPublicationDates(gamesInfo.map(game => game.id))
+                .then(dates => {
+                    for (const game of gamesInfo) game.publishedAt = dates[game.id] ?? null
+                })
+                .catch(error => Logger.warn('Publication dates unavailable:', error.message))
             const allPlayersData = []
             const errors = []
             const dateRange = ApiService.getAnalyticsDateRange(today)
 
             for (let i = 0; i < gamesInfo.length; i++) {
+                if (!current()) return
                 const gameId = gamesInfo[i].id
 
                 const results = await Promise.allSettled([
                     ApiService.fetchAnalyticsData(this.csrfToken, gameId, CHART.SLUG, dateRange),
                     ApiService.fetchAnalyticsData(this.csrfToken, gameId, CHART.PLAYERS_SLUG, dateRange),
                 ])
+                if (!current()) return
                 for (const [index, result] of results.entries()) {
                     const target = index === 0 ? allGamesData : allPlayersData
                     target.push(result.status === 'fulfilled' ? result.value : null)
@@ -479,23 +564,26 @@ export class App {
                 }
             }
 
+            await publicationDates
+            if (!current()) return
             const lastTimestamp = findLatestTimestamp(allGamesData)
 
-            const aggregated = aggregateRevenueData(allGamesData, lastTimestamp)
-            const totalPlayers = aggregatePlayersData(allPlayersData, lastTimestamp)
+            const aggregated = aggregateRevenueData(allGamesData, lastTimestamp, gamesInfo)
+            const totalPlayers = aggregatePlayersData(allPlayersData, lastTimestamp, gamesInfo)
 
             const lastDate = lastTimestamp ? new Date(lastTimestamp) : today
 
             const lastDayData = {
                 date: lastDate,
                 amount: aggregated.total,
+                partial: aggregated.partial,
                 advertising: aggregated.advertising,
                 inApp: aggregated.inApp,
-                gamesCount: gamesInfo.length,
+                gamesCount: aggregated.gamesCount,
                 players: totalPlayers,
             }
 
-            this.rawData = {
+            const snapshot = {
                 allGamesData: allGamesData,
                 allPlayersData: allPlayersData,
                 gamesInfo: gamesInfo,
@@ -511,39 +599,31 @@ export class App {
             // Period totals in the console retain precision that rounded daily chart values lose.
             const periods = ['week', 'month', 'month_current', 'month_prev', 'all-time']
             const totals = await Promise.allSettled(periods.map(period => {
-                const range = this.getPeriodRange(this.rawData, period)
+                const range = this.getPeriodRange(snapshot, period)
                 return ApiService.fetchRevenueTotals([range.start, range.end].map(value => new Date(value).toISOString().slice(0, 10)))
             }))
+            if (!current()) return
             totals.forEach((result, index) => {
-                if (result.status === 'fulfilled') this.rawData.periodRevenues[periods[index]] = result.value
-                else this.rawData.periodErrors[periods[index]] = result.reason.message
+                if (result.status === 'fulfilled') snapshot.periodRevenues[periods[index]] = result.value
+                else snapshot.periodErrors[periods[index]] = result.reason.message
             })
 
-            const timestamps = extractUniqueTimestamps(allGamesData)
-            this.availableDates = timestamps.map((timestamp) => ({
-                timestamp: timestamp,
-                label: formatDate(new Date(timestamp)),
-            }))
-
-            if (this.dateSelectionMode === 'specific-date' && this.selectedDate) {
-                this.updateDataForSpecificDate(this.selectedDate)
-            } else {
-                this.updateDataForPeriod(this.selectedPeriod)
+            const updatedAt = Date.now()
+            if (!errors.length && !Object.keys(snapshot.periodErrors).length) {
+                await this.cache?.write(context, snapshot, updatedAt)
+                if (!current()) return
             }
+            this.displaySnapshot(snapshot, updatedAt)
 
         } catch (error) {
+            if (!current()) return
             Logger.error('Data load failed:', error)
-            this.view.showButton()
+            if (this.rawData) this.displaySnapshot(this.rawData, this.updatedAt)
+            else this.view.showButton()
             this.view.setNotice(`Не удалось загрузить статистику: ${error.message}`)
             this.setupLoadButton()
         } finally {
-            this.isLoading = false
-            
-            if (button) {
-                button.disabled = false
-                button.style.opacity = '1'
-                button.style.cursor = 'pointer'
-            }
+            if (this.loadingWidget === widget) this.loadingWidget = null
         }
     }
 
@@ -637,6 +717,7 @@ export class App {
             this.rawData.allGamesData,
             periodStart,
             periodEnd,
+            this.rawData.gamesInfo,
         )
 
         this.view.showChart(chartData, period)
@@ -685,6 +766,7 @@ export class App {
     }
 
     destroy() {
+        clearTimeout(this.cacheTimer)
         this.domService.stopObserver()
         this.domService.stopPeriodicCheck()
         this.domService.stopUrlMonitoring()

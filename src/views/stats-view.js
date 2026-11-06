@@ -1,4 +1,4 @@
-import { formatMoney, formatCompactNumber, hexToRgba } from '../utils/formatters.js'
+import { formatDate, formatMoney, formatCompactNumber, hexToRgba } from '../utils/formatters.js'
 import { SELECTORS, DATA_ATTRIBUTES, CHART_COLORS } from '../config/constants.js'
 
 export class StatsView {
@@ -83,6 +83,19 @@ export class StatsView {
         content.appendChild(this._createLoadButtonWrapper())
     }
 
+    showCachedActions(onShow, onRefresh) {
+        const content = this._getContentAndClear()
+        if (!content) return
+        const center = this._createDiv('stats-center')
+        center.style.gap = '12px'
+        const show = this._actionButton('Показать', 'show')
+        show.onclick = onShow
+        const refresh = this._actionButton('Обновить', 'refresh')
+        refresh.onclick = onRefresh
+        center.append(show, refresh)
+        content.appendChild(center)
+    }
+
     showResults(data, selectedPeriod = 'day', availableDates = [], selectedDate = null) {
         this._showDateElement()
         const content = this._getContentAndClear()
@@ -92,7 +105,7 @@ export class StatsView {
         content.appendChild(this._createSelectorsWrapper(availableDates, selectedDate, selectedPeriod))
 
         content.appendChild(this._createStatsRow('stats-row--total', [
-            { label: 'Общий заработок', value: formatMoney(data.amount), size: 'large' },
+            { label: data.partial ? 'Заработок по доступным данным' : 'Общий заработок', value: formatMoney(data.amount), size: 'large' },
         ]))
 
         content.appendChild(this._createStatsRow('stats-row--sources', [
@@ -101,7 +114,7 @@ export class StatsView {
         ]))
 
         content.appendChild(this._createStatsRow('stats-row--players', [
-            { label: selectedPeriod === 'day' ? 'Игроков' : 'Игроко-дней', value: data.players === null ? '—' : (data.players || 0).toLocaleString('ru-RU'), size: 'medium' },
+            { label: selectedPeriod === 'day' ? 'Игроков' : 'Игроки, сумма по дням', value: data.players === null ? '—' : (data.players || 0).toLocaleString('ru-RU'), size: 'medium' },
         ]))
 
         content.appendChild(this._createStatsRow('stats-row--footer', [
@@ -134,11 +147,53 @@ export class StatsView {
         content.appendChild(this._createChart(chartData))
     }
 
-    setNotice(message) {
+    setNotice(message, report) {
         const notice = this.element?.querySelector('[data-stats="notice"]')
         if (!notice) return
-        notice.textContent = message
-        notice.hidden = !message
+        if (!report) {
+            notice.textContent = message
+            notice.hidden = !message
+            return
+        }
+
+        const wasOpen = notice.querySelector('details')?.open
+        const facts = []
+        if (report.updatedAt) facts.push(['Обновлено', new Date(report.updatedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })])
+        if (report.lastTimestamp) facts.push(['Графики по', formatDate(new Date(report.lastTimestamp))])
+        notice.replaceChildren()
+        notice.hidden = !facts.length && !message
+        const details = message ? document.createElement('details') : null
+        const panel = details || document.createElement('div')
+        panel.style.cssText = 'padding:8px 12px;background:rgba(30,22,64,.16);border-radius:8px'
+        const bar = document.createElement(details ? 'summary' : 'div')
+        bar.style.cssText = 'display:flex;flex-wrap:wrap;align-items:center;gap:6px 20px;list-style:none'
+        for (const [label, value] of facts) {
+            const fact = document.createElement('span')
+            const number = document.createElement('strong')
+            number.textContent = value
+            fact.append(label + ' ', number)
+            bar.appendChild(fact)
+        }
+        panel.appendChild(bar)
+        notice.appendChild(panel)
+        if (!details) return
+
+        details.open = Boolean(wasOpen)
+        bar.style.cursor = 'pointer'
+        const badge = document.createElement('span')
+        badge.style.cssText = 'margin-inline-start:auto;padding:2px 9px;border-radius:12px;background:rgba(32,24,58,.34);color:#fff1c6;font-weight:600'
+        const updateBadge = () => { badge.textContent = report.summary + (details.open ? '  ▴' : '  ▾') }
+        updateBadge()
+        details.addEventListener('toggle', updateBadge)
+        bar.appendChild(badge)
+        const list = document.createElement('ul')
+        list.style.cssText = 'margin:8px 0 0;padding-inline-start:20px;overflow-wrap:anywhere;max-height:8em;overflow-y:auto'
+        for (const line of message.split('\n')) {
+            const item = document.createElement('li')
+            item.textContent = line
+            list.appendChild(item)
+        }
+        details.appendChild(list)
     }
 
     showVersionInfo(info) {
@@ -204,14 +259,29 @@ export class StatsView {
         return div
     }
 
+    _actionButton(label, action) {
+        const paths = {
+            show: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z',
+            refresh: 'M20 4v6h-6M20 10a8 8 0 1 0 0 5',
+            load: 'M4 4v16h16M8 16v-4m5 4V7m5 9v-6',
+        }
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.className = action === 'refresh' ? 'stats-load-button stats-load-button--secondary' : 'stats-load-button'
+        // The browser may still be using the previous content stylesheet, which spins button SVGs.
+        button.innerHTML = `<svg aria-hidden="true" focusable="false" width="18" height="18" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+            style="animation: none; flex: none"><path d="${paths[action]}"/></svg>`
+        button.append(label)
+        return button
+    }
+
     _createLoadButtonWrapper() {
         const center = document.createElement('div')
         center.className = 'stats-center'
 
-        const button = document.createElement('button')
-        button.className = 'stats-load-button'
+        const button = this._actionButton('Загрузить статистику', 'load')
         button.setAttribute('data-stats', DATA_ATTRIBUTES.LOAD_BUTTON)
-        button.textContent = 'Загрузить статистику'
 
         center.appendChild(button)
         return center
@@ -248,6 +318,10 @@ export class StatsView {
 
         header.appendChild(title)
         header.appendChild(dateSpan)
+        const refresh = this._actionButton('Обновить', 'refresh')
+        refresh.dataset.stats = 'refresh'
+        refresh.hidden = true
+        header.appendChild(refresh)
 
         const content = document.createElement('div')
         content.className = 'stats-content'
@@ -391,6 +465,10 @@ export class StatsView {
         table.appendChild(tbody)
 
         tableWrapper.appendChild(table)
+        tableWrapper.appendChild(this._createDiv('stats-notice',
+            'Доход на 1 000 игроков = общий доход ÷ число игроков × 1 000.'
+            + (period === 'day' ? '' : ' За период игроки суммируются по дням: один человек может учитываться несколько раз.')
+            + ' При отсутствии данных или нуле игроков — прочерк.'))
         return tableWrapper
     }
 
@@ -404,8 +482,8 @@ export class StatsView {
             { sort: 'totalRevenue', label: 'Общий доход' },
             { sort: 'advertising', label: 'Реклама' },
             { sort: 'inApp', label: 'In-app' },
-            { sort: 'players', label: period === 'day' ? 'Игроки' : 'Игроко-дни' },
-            { sort: 'revenuePerPlayer', label: period === 'day' ? '₽/игрок' : '₽/игроко-день' },
+            { sort: 'players', label: period === 'day' ? 'Игроки' : 'Игроки, сумма по дням' },
+            { sort: 'revenuePerPlayer', label: 'Доход на 1 000 игроков' },
         ]
 
         headers.forEach(({ sort, label }) => {
@@ -428,15 +506,19 @@ export class StatsView {
 
     _createTableRow(game, period) {
         const row = document.createElement('tr')
+        if (game.beforePublication && game.totalRevenue === null) row.setAttribute('title', 'В выбранном периоде игра ещё не опубликована')
+
+        const partialAmount = game.partial && game.totalRevenue !== null
+        if (partialAmount) row.title = 'Сумма по доступным дням'
 
         const cells = [
             { className: 'game-name', label: 'Название', value: game.name || 'Неизвестная игра' },
             { className: 'game-id', label: 'ID игры', value: game.id || '-' },
-            { className: 'revenue-cell', label: 'Общий доход', value: formatMoney(game.totalRevenue) },
+            { className: 'revenue-cell', label: 'Общий доход', value: formatMoney(game.totalRevenue) + (partialAmount ? ' *' : '') },
             { className: 'revenue-cell', label: 'Реклама', value: formatMoney(game.advertising) },
             { className: 'revenue-cell', label: 'In-app', value: formatMoney(game.inApp) },
-            { className: 'players-cell', label: period === 'day' ? 'Игроки' : 'Игроко-дни', value: game.players === null ? '—' : (game.players || 0).toLocaleString('ru-RU') },
-            { className: 'revenue-cell', label: period === 'day' ? '₽/игрок' : '₽/игроко-день', value: formatMoney(game.revenuePerPlayer) },
+            { className: 'players-cell', label: period === 'day' ? 'Игроки' : 'Игроки, сумма по дням', value: game.players === null ? '—' : (game.players || 0).toLocaleString('ru-RU') },
+            { className: 'revenue-cell', label: 'Доход на 1 000 игроков', value: formatMoney(game.revenuePerPlayer === null ? null : game.revenuePerPlayer * 1000) },
         ]
 
         cells.forEach(({ className, label, value }) => {
@@ -483,6 +565,9 @@ export class StatsView {
 
         const { points } = chartData
         const labels = points.map(p => p.dateLabel)
+        if (points.some(point => point.partial && point.total !== null)) {
+            container.appendChild(this._createDiv('stats-notice', 'Жёлтые точки и пунктир — дни без значения дохода у части игр, не обязательно сбой. Дни до известной даты публикации не считаются пропусками.'))
+        }
 
         // Create chart after canvas is in DOM (requestAnimationFrame ensures canvas is rendered)
         requestAnimationFrame(() => {
@@ -495,12 +580,12 @@ export class StatsView {
                 data: {
                     labels,
                     datasets: [
-                        this._createDatasetConfig('Всего', points.map(p => p.total), CHART_COLORS.total, gradients.total, { borderWidth: 3, hidden: false }),
-                        this._createDatasetConfig('Реклама', points.map(p => p.advertising), CHART_COLORS.advertising, gradients.advertising, { hidden: true }),
-                        this._createDatasetConfig('In-app', points.map(p => p.inApp), CHART_COLORS.inApp, gradients.inApp, { hidden: true }),
+                        this._createDatasetConfig('Всего', points.map(p => p.total), CHART_COLORS.total, gradients.total, { borderWidth: 3, hidden: false }, points),
+                        this._createDatasetConfig('Реклама', points.map(p => p.advertising), CHART_COLORS.advertising, gradients.advertising, { hidden: true }, points),
+                        this._createDatasetConfig('In-app', points.map(p => p.inApp), CHART_COLORS.inApp, gradients.inApp, { hidden: true }, points),
                     ],
                 },
-                options: this._getChartOptions(),
+                options: this._getChartOptions(points),
             })
         })
 
@@ -523,8 +608,9 @@ export class StatsView {
         }
     }
 
-    _createDatasetConfig(label, data, color, gradient, options = {}) {
+    _createDatasetConfig(label, data, color, gradient, options = {}, points = []) {
         const hoverColor = hexToRgba(color, color === CHART_COLORS.total ? 0.8 : 0.5)
+        const pointColors = data.map((_, index) => points[index]?.partial ? '#FBBF24' : color)
 
         return {
             label,
@@ -534,16 +620,22 @@ export class StatsView {
             borderWidth: options.borderWidth || 2,
             fill: true,
             tension: 0.4,
-            pointRadius: data.length === 1 ? 4 : 0,
+            spanGaps: false,
+            segment: {
+                borderDash: context => points[context.p0DataIndex]?.partial || points[context.p1DataIndex]?.partial ? [6, 4] : [],
+            },
+            pointRadius: data.map((_, index) => points[index]?.partial || data.length === 1 ? 4 : 0),
+            pointBackgroundColor: pointColors,
+            pointBorderColor: pointColors,
             pointHoverRadius: options.borderWidth === 3 ? 6 : 5,
-            pointHoverBackgroundColor: color,
+            pointHoverBackgroundColor: pointColors,
             pointHoverBorderColor: hoverColor,
             pointHoverBorderWidth: 2,
             hidden: options.hidden ?? false,
         }
     }
 
-    _getChartOptions() {
+    _getChartOptions(points) {
         return {
             responsive: true,
             maintainAspectRatio: false,
@@ -557,7 +649,7 @@ export class StatsView {
             },
             plugins: {
                 legend: this._getLegendConfig(),
-                tooltip: this._getTooltipConfig(),
+                tooltip: this._getTooltipConfig(points),
             },
             scales: {
                 x: {
@@ -597,6 +689,11 @@ export class StatsView {
                 pointStyle: 'circle',
                 boxWidth: 8,
                 boxHeight: 8,
+                generateLabels: chart => Chart.defaults.plugins.legend.labels.generateLabels(chart).map(item => ({
+                    ...item,
+                    fillStyle: chart.data.datasets[item.datasetIndex].borderColor,
+                    strokeStyle: chart.data.datasets[item.datasetIndex].borderColor,
+                })),
             },
             onClick: (e, legendItem, legend) => {
                 const chart = legend.chart
@@ -634,7 +731,7 @@ export class StatsView {
         }
     }
 
-    _getTooltipConfig() {
+    _getTooltipConfig(points = []) {
         return {
             enabled: true,
             backgroundColor: 'rgba(15, 23, 42, 0.95)',
@@ -652,6 +749,27 @@ export class StatsView {
             callbacks: {
                 title: (items) => items.length ? `📅 ${items[0].label}` : '',
                 label: (context) => ` ${context.dataset.label}: ${formatMoney(context.parsed.y)}`,
+                afterBody: (items) => {
+                    const point = points[items[0]?.dataIndex]
+                    if (!point || (!point.partial && !point.unpublishedGames?.length)) return []
+                    const missing = point.missingGames
+                    const lines = [
+                        `Доход указан у ${point.gamesCount - missing.length} из ${point.gamesCount} игр`,
+                    ]
+                    if (missing.length) lines.push(
+                        'Без значения дохода:',
+                        ...missing.slice(0, 3).map(name => name.length > 48 ? `${name.slice(0, 47)}…` : name),
+                        ...(missing.length > 3 ? [`И ещё ${missing.length - 3}`] : []),
+                        'Причина отсутствия значения не указана.',
+                    )
+                    const unpublished = point.unpublishedGames || []
+                    if (unpublished.length) lines.push(
+                        'До публикации (не пропуски):',
+                        ...unpublished.slice(0, 3).map(name => name.length > 48 ? `${name.slice(0, 47)}…` : name),
+                        ...(unpublished.length > 3 ? [`И ещё ${unpublished.length - 3}`] : []),
+                    )
+                    return lines
+                },
                 labelTextColor: () => 'rgba(248, 250, 252, 0.9)',
             },
         }
