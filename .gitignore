@@ -26,3 +26,5 @@ coverage
 # Env/config
 .env
 docker-compose.yml
+
+/.codex/
