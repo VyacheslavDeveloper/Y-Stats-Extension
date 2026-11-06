@@ -121,6 +121,7 @@ export class App {
             else if (this.pendingLoad && context) this.loadData()
         } else {
             clearTimeout(this.cacheTimer)
+            clearTimeout(this.profileTimer)
             this.pendingLoad = false
             this.loadingWidget = null
             this.domService.removeBlock()
@@ -129,6 +130,8 @@ export class App {
 
     onBlockInserted() {
         clearTimeout(this.cacheTimer)
+        clearTimeout(this.profileTimer)
+        this.profileTimer = null
         this.loadingWidget = null
         this.rawData = null
         this.updatedAt = null
@@ -145,8 +148,8 @@ export class App {
 
         const widget = this.view.element
         const context = this.widgetContext
-        this.cacheLookup = context ? widget : null
-        if (context) this.restoreCache(widget, context)
+        this.cacheLookup = context && context !== '-1' ? widget : null
+        if (this.cacheLookup) this.restoreCache(widget, context)
         else if (this.pendingLoad) this.loadData()
     }
 
@@ -478,7 +481,7 @@ export class App {
         }
     }
 
-    async loadData() {
+    async loadData(profileSettled = false) {
         const widget = this.view.element
         if (this.loadingWidget === widget) return
         const context = ApiService.getRelationContext()
@@ -486,9 +489,14 @@ export class App {
             this.pendingLoad = true
             return
         }
-        if (!context && (this.pendingLoad || new URLSearchParams(window.location.hash.slice(1)).get('relation_context') === '-1')) {
+        if (context === '-1' && !profileSettled) {
             this.pendingLoad = true
-            this.view.setNotice('Кабинет определяет аккаунт. Загрузка начнётся автоматически после выбора аккаунта.')
+            this.view.setNotice('Кабинет определяет аккаунт…')
+            // Give navigation a moment to resolve a numbered profile after a reload.
+            this.profileTimer ??= setTimeout(() => {
+                this.profileTimer = null
+                if (this.view.element === widget && this.view.isInDOM() && ApiService.getRelationContext() === '-1') this.loadData(true)
+            }, 500)
             return
         }
 

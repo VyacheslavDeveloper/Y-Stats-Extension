@@ -95,6 +95,8 @@ try {
     assert.equal((await cache.read('111')).data.allPlayersData[0], null)
     assert.equal(await cache.read('222'), null, 'Another account must never receive this snapshot')
     assert.equal(await cache.read(null), null, 'Unresolved accounts cannot use shared cache')
+    await cache.write('-1', snapshot, now)
+    assert.equal(await cache.read('-1'), null, 'The personal profile marker must not share cached money between logins')
     mock.timers.setTime(now + tenMinutes - 1)
     assert.ok(await cache.read('111'), 'Cache stays usable until the 10-minute boundary')
     mock.timers.setTime(now + tenMinutes)

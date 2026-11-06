@@ -143,8 +143,26 @@ test('period coverage starts on publication day, preserving actual pre-release a
     const partial = prepareGamesTableData(gap, info, day - dayMs, day + dayMs, 'week', counts)[0]
     assert.equal(partial.totalRevenue, 7)
     assert.equal(partial.partial, true)
-    assert.equal(partial.revenuePerPlayer, null)
+    assert.equal(partial.revenuePerPlayer, 7 / 4)
+    assert.equal(partial.partialRatio, true)
     assert.equal(prepareGamesTableData(data, info, day - dayMs, day + dayMs, 'week', [players([[day + dayMs, 4]])])[0].players, null)
+})
+
+test('a partial ratio pairs calendar days before dividing, preserving zero income and exact complete totals', () => {
+    const end = day + 3 * dayMs
+    const income = revenue([[day, 8], [day + dayMs, null], [day + 2 * dayMs, 0], [end, 40]])
+    const row = (points, totals = null) => prepareGamesTableData([income], games, day, end, 'week', [players(points)], totals)[0]
+    const counts = [[day + 9 * 3600000, 2], [day + dayMs, 100], [day + 2 * dayMs, 6]]
+    assert.equal(row(counts).revenuePerPlayer, 1)
+    assert.equal(row(counts).partialRatio, true)
+    assert.equal(row([[day + 2 * dayMs, 6]]).revenuePerPlayer, 0)
+    assert.equal(row([[day + dayMs, 100]]).revenuePerPlayer, null)
+    assert.equal(row([[day, 0]]).revenuePerPlayer, null)
+    const totals = { 101: { totalRevenue: 60, advertising: 60, inApp: 0 } }
+    assert.equal(row(counts, totals).revenuePerPlayer, 1, 'A full-period total cannot be divided by a shorter player series')
+    const full = row([...counts, [end, 12]], totals)
+    assert.equal(full.revenuePerPlayer, 0.5)
+    assert.equal(full.partialRatio, false)
 })
 
 test('a fallback period keeps known money and marks gaps, while exact totals take precedence', () => {
@@ -199,6 +217,7 @@ test('income per thousand players renders the unrounded ratio and leaves a zero 
         assert.equal(view._createTableRow(makeRow(10.25, 0), 'day').children.at(-1).textContent, '—')
         assert.equal(view._createTableRow(makeRow(0, 8), 'day').children.at(-1).textContent, formatMoney(0))
         assert.equal(view._createTableRow({...row, revenuePerPlayer: null}, 'day').children.at(-1).textContent, '—')
+        assert.equal(view._createTableRow({...row, partialRatio: true}, 'week').children.at(-1).textContent, formatMoney(1281.25) + ' *')
     } finally {
         if (originalDocument === undefined) delete globalThis.document
         else globalThis.document = originalDocument

@@ -468,7 +468,8 @@ export class StatsView {
         tableWrapper.appendChild(this._createDiv('stats-notice',
             'Доход на 1 000 игроков = общий доход ÷ число игроков × 1 000.'
             + (period === 'day' ? '' : ' За период игроки суммируются по дням: один человек может учитываться несколько раз.')
-            + ' При отсутствии данных или нуле игроков — прочерк.'))
+            + (period === 'day' ? '' : ' Звёздочка в последнем столбце означает, что учтены только дни, за которые есть и доход, и игроки.')
+            + ' Если данных для расчёта нет или сумма игроков равна нулю, показан прочерк.'))
         return tableWrapper
     }
 
@@ -518,7 +519,7 @@ export class StatsView {
             { className: 'revenue-cell', label: 'Реклама', value: formatMoney(game.advertising) },
             { className: 'revenue-cell', label: 'In-app', value: formatMoney(game.inApp) },
             { className: 'players-cell', label: period === 'day' ? 'Игроки' : 'Игроки, сумма по дням', value: game.players === null ? '—' : (game.players || 0).toLocaleString('ru-RU') },
-            { className: 'revenue-cell', label: 'Доход на 1 000 игроков', value: formatMoney(game.revenuePerPlayer === null ? null : game.revenuePerPlayer * 1000) },
+            { className: 'revenue-cell', label: 'Доход на 1 000 игроков', value: formatMoney(game.revenuePerPlayer === null ? null : game.revenuePerPlayer * 1000) + (game.partialRatio ? ' *' : '') },
         ]
 
         cells.forEach(({ className, label, value }) => {

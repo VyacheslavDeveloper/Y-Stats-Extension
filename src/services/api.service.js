@@ -102,8 +102,8 @@ export class ApiService {
 
     static getRelationContext() {
         const context = Number(new URLSearchParams(window.location.hash.slice(1)).get('relation_context'))
-        // The console briefly puts -1 in the URL while resolving the active account.
-        return Number.isSafeInteger(context) && context > 0 ? String(context) : null
+        // -1 also identifies the selected personal profile.
+        return Number.isSafeInteger(context) && (context > 0 || context === -1) ? String(context) : null
     }
 
     static async fetchRevenueTotals(dateRange) {

@@ -199,19 +199,17 @@ export function prepareGamesTableData(allGamesData, gamesInfo, periodStart, peri
             : extractPeriodRevenue(series, periodStart, periodEnd, gameInfo.publishedAt)
         const totalRevenue = revenueTotals ? revenue.totalRevenue : revenue.advertising === null || revenue.inApp === null ? null : revenue.advertising + revenue.inApp
 
-        let players = null
-        if (allPlayersData && allPlayersData[index]) {
-            const playersSeries = allPlayersData[index]?.options?.series
-            if (playersSeries) {
-                players = !playersSeries.length ? null : period === 'day'
-                    ? extractPlayersFromSeries(playersSeries, periodEnd)
-                    : extractPeriodPlayers(playersSeries, periodStart, Math.min(periodEnd, lastPlayersTimestamp ?? periodEnd), gameInfo.publishedAt)
-            }
-        }
+        const playersSeries = allPlayersData?.[index]?.options?.series
+        const players = period === 'day'
+            ? extractPlayersFromSeries(playersSeries, periodEnd)
+            : extractPeriodPlayers(playersSeries, periodStart, Math.min(periodEnd, lastPlayersTimestamp ?? periodEnd), gameInfo.publishedAt)
 
         const beforePublication = isBeforePublication(periodEnd, gameInfo.publishedAt)
         const partial = revenue.partial === true || (totalRevenue === null && !beforePublication)
-        const revenuePerPlayer = partial || players === null || totalRevenue === null ? null : calculateRevenuePerPlayer(totalRevenue, players)
+        const useMatchedDays = period !== 'day' && (partial || players === null || reportDay(lastPlayersTimestamp) < reportDay(periodEnd))
+        const revenuePerPlayer = useMatchedDays
+            ? matchedRevenuePerPlayer(series, playersSeries, periodStart, periodEnd)
+            : totalRevenue === null ? null : calculateRevenuePerPlayer(totalRevenue, players)
 
         return {
             id: gameInfo.id,
@@ -220,6 +218,7 @@ export function prepareGamesTableData(allGamesData, gamesInfo, periodStart, peri
             totalRevenue,
             players,
             revenuePerPlayer,
+            partialRatio: useMatchedDays && revenuePerPlayer !== null,
             beforePublication,
             ...revenue,
             partial,
@@ -240,6 +239,21 @@ function extractDayRevenue(series, timestamp) {
         advertising: extractRevenueFromSeries(series, REVENUE_SERIES_IDS.ADVERTISING, timestamp),
         inApp: extractRevenueFromSeries(series, REVENUE_SERIES_IDS.IN_APP, timestamp),
     }
+}
+
+function matchedRevenuePerPlayer(series, playersSeries, start, end) {
+    const counts = playersSeries?.find(item => item.id === CHART.PLAYERS_SERIES_ID)?.data
+    if (!series?.length || !counts?.length) return null
+    let amount = 0
+    let players = 0
+    for (const { x, y } of counts) {
+        if (!Number.isFinite(y) || reportDay(x) < reportDay(start) || reportDay(x) > reportDay(end)) continue
+        const { advertising, inApp } = extractDayRevenue(series, x)
+        if (advertising === null || inApp === null) continue
+        amount += advertising + inApp
+        players += y
+    }
+    return calculateRevenuePerPlayer(amount, players)
 }
 
 function extractPeriodRevenue(series, periodStart, periodEnd, publishedAt) {
